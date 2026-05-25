@@ -1,0 +1,259 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { DEFAULT_SETTINGS } from "../domain/defaults";
+import type {
+  AppSettings,
+  AppStateSnapshot,
+  Feed,
+  Folder,
+  HistoryMap,
+  SeriesCatalog,
+  SyncMeta,
+  TagNode,
+  UserLabel,
+} from "../domain/types";
+import { db, loadSyncMeta } from "../db/appDb";
+import { loadCachedData, syncFrontendData } from "../services/dataService";
+
+const STORAGE_KEY = "manhwa-library-state-v1";
+
+interface StoreState {
+  ready: boolean;
+  catalog: SeriesCatalog[];
+  tags: TagNode[];
+  history: HistoryMap;
+  syncMeta: SyncMeta | null;
+  feeds: Feed[];
+  folders: Folder[];
+  labels: UserLabel[];
+  settings: AppSettings;
+  activeFeedId: string | null;
+  syncStatus: string;
+  setActiveFeedId: (id: string | null) => void;
+  upsertFeed: (feed: Feed) => void;
+  deleteFeed: (id: string) => void;
+  reorderFeeds: (id: string, direction: -1 | 1) => void;
+  upsertFolder: (folder: Folder) => void;
+  upsertLabel: (label: UserLabel) => void;
+  updateSettings: (settings: Partial<AppSettings>) => void;
+  refreshData: () => Promise<void>;
+  resetLocalState: () => Promise<void>;
+  importSnapshot: (snapshot: Partial<AppStateSnapshot>, mode: "merge" | "replace") => void;
+}
+
+function loadLocalSnapshot(): Partial<AppStateSnapshot> {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Partial<AppStateSnapshot>;
+  } catch {
+    return {};
+  }
+}
+
+function mergeSettings(settings?: Partial<AppSettings>): AppSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    defaultFeedView: {
+      ...DEFAULT_SETTINGS.defaultFeedView,
+      ...settings?.defaultFeedView,
+      visible: {
+        ...DEFAULT_SETTINGS.defaultFeedView.visible,
+        ...settings?.defaultFeedView?.visible,
+      },
+    },
+    detailVisible: {
+      ...DEFAULT_SETTINGS.detailVisible,
+      ...settings?.detailVisible,
+    },
+    metricNames: {
+      ...DEFAULT_SETTINGS.metricNames,
+      ...settings?.metricNames,
+    },
+  };
+}
+
+const AppStoreContext = createContext<StoreState | null>(null);
+
+export function AppStoreProvider({ children }: { children: ReactNode }) {
+  const local = useMemo(loadLocalSnapshot, []);
+  const [ready, setReady] = useState(false);
+  const [catalog, setCatalog] = useState<SeriesCatalog[]>([]);
+  const [tags, setTags] = useState<TagNode[]>([]);
+  const [history, setHistory] = useState<HistoryMap>({});
+  const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
+  const [feeds, setFeeds] = useState<Feed[]>(local.feeds ?? []);
+  const [folders, setFolders] = useState<Folder[]>(local.folders ?? []);
+  const [labels, setLabels] = useState<UserLabel[]>(local.labels ?? []);
+  const [settings, setSettings] = useState<AppSettings>(mergeSettings(local.settings));
+  const [activeFeedId, setActiveFeedId] = useState<string | null>(local.activeFeedId ?? null);
+  const [syncStatus, setSyncStatus] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      const [{ catalog: cachedCatalog, tags: cachedTags, history: cachedHistory }, meta] = await Promise.all([
+        loadCachedData(),
+        loadSyncMeta(),
+      ]);
+      setCatalog(cachedCatalog);
+      setTags(cachedTags);
+      setHistory(cachedHistory);
+      setSyncMeta(meta);
+      setReady(true);
+      const hasQueryDates = cachedCatalog.some((item) => item.published?.start_date || item.published?.end_date);
+      if (cachedCatalog.length === 0 || !hasQueryDates) {
+        await refreshData();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const snapshot: AppStateSnapshot = {
+      feeds,
+      folders,
+      labels,
+      settings,
+      activeFeedId,
+      lastRoute: window.location.hash,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  }, [feeds, folders, labels, settings, activeFeedId]);
+
+  const refreshData = useCallback(async () => {
+    setSyncStatus("Starting sync");
+    try {
+      const synced = await syncFrontendData(settings.dataSourceUrl, setSyncStatus);
+      setCatalog(synced.catalog);
+      setTags(synced.tags);
+      setHistory(synced.history);
+      setSyncMeta(synced.meta);
+      setSettings((current) => ({ ...current, dataSourceUrl: synced.meta.source }));
+      setSyncStatus("Sync complete");
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Sync failed");
+    }
+  }, [settings.dataSourceUrl]);
+
+  const upsertFeed = useCallback((feed: Feed) => {
+    const updated = { ...feed, updatedAt: new Date().toISOString() };
+    setFeeds((current) => {
+      const exists = current.some((item) => item.id === feed.id);
+      return exists ? current.map((item) => (item.id === feed.id ? updated : item)) : [...current, updated];
+    });
+    setActiveFeedId((current) => current ?? updated.id);
+  }, []);
+
+  const deleteFeed = useCallback((id: string) => {
+    setFeeds((current) => current.filter((feed) => feed.id !== id));
+    setActiveFeedId((current) => (current === id ? null : current));
+  }, []);
+
+  const reorderFeeds = useCallback((id: string, direction: -1 | 1) => {
+    setFeeds((current) => {
+      const index = current.findIndex((feed) => feed.id === id);
+      const next = index + direction;
+      if (index < 0 || next < 0 || next >= current.length) return current;
+      const copy = [...current];
+      [copy[index], copy[next]] = [copy[next], copy[index]];
+      return copy;
+    });
+  }, []);
+
+  const upsertFolder = useCallback((folder: Folder) => {
+    setFolders((current) => {
+      const exists = current.some((item) => item.id === folder.id);
+      return exists ? current.map((item) => (item.id === folder.id ? folder : item)) : [...current, folder];
+    });
+  }, []);
+
+  const upsertLabel = useCallback((label: UserLabel) => {
+    setLabels((current) => {
+      const exists = current.some((item) => item.id === label.id);
+      return exists ? current.map((item) => (item.id === label.id ? label : item)) : [...current, label];
+    });
+  }, []);
+
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((current) => mergeSettings({ ...current, ...patch }));
+  }, []);
+
+  const resetLocalState = useCallback(async () => {
+    localStorage.removeItem(STORAGE_KEY);
+    await db.details.clear();
+    setFeeds([]);
+    setFolders([]);
+    setLabels([]);
+    setSettings(DEFAULT_SETTINGS);
+    setActiveFeedId(null);
+  }, []);
+
+  const importSnapshot = useCallback((snapshot: Partial<AppStateSnapshot>, mode: "merge" | "replace") => {
+    if (mode === "replace") {
+      setFeeds(snapshot.feeds ?? []);
+      setFolders(snapshot.folders ?? []);
+      setLabels(snapshot.labels ?? []);
+      setSettings(mergeSettings(snapshot.settings));
+      setActiveFeedId(snapshot.activeFeedId ?? null);
+      return;
+    }
+    setFeeds((current) => [...current, ...(snapshot.feeds ?? [])]);
+    setFolders((current) => [...current, ...(snapshot.folders ?? [])]);
+    setLabels((current) => [...current, ...(snapshot.labels ?? [])]);
+    if (snapshot.settings) setSettings((current) => mergeSettings({ ...current, ...snapshot.settings }));
+  }, []);
+
+  const value = useMemo<StoreState>(
+    () => ({
+      ready,
+      catalog,
+      tags,
+      history,
+      syncMeta,
+      feeds,
+      folders,
+      labels,
+      settings,
+      activeFeedId,
+      syncStatus,
+      setActiveFeedId,
+      upsertFeed,
+      deleteFeed,
+      reorderFeeds,
+      upsertFolder,
+      upsertLabel,
+      updateSettings,
+      refreshData,
+      resetLocalState,
+      importSnapshot,
+    }),
+    [
+      ready,
+      catalog,
+      tags,
+      history,
+      syncMeta,
+      feeds,
+      folders,
+      labels,
+      settings,
+      activeFeedId,
+      syncStatus,
+      upsertFeed,
+      deleteFeed,
+      reorderFeeds,
+      upsertFolder,
+      upsertLabel,
+      updateSettings,
+      refreshData,
+      resetLocalState,
+      importSnapshot,
+    ],
+  );
+
+  return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
+}
+
+export function useAppStore() {
+  const store = useContext(AppStoreContext);
+  if (!store) throw new Error("useAppStore must be used inside AppStoreProvider");
+  return store;
+}

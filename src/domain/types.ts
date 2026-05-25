@@ -1,0 +1,277 @@
+export type ContentRating = "safe" | "suggestive" | "erotica" | "pornographic";
+export type ViewMode = "grid" | "list";
+export type GridDensity = "comfortable" | "standard" | "compact";
+export type ListDensity = "compact" | "standard" | "detailed";
+export type ListCoverSize = "small" | "medium" | "large";
+export type SourceMode = "anilist" | "non-anilist" | "mixed";
+export type NonAniListPlacement = "top" | "bottom" | "mixed";
+export type ControlPlacement = "drawer" | "toolbar" | "fab";
+export type ThemeMode = "system" | "dark" | "light";
+
+export interface AniListStats {
+  popularity: number | null;
+  favourites: number | null;
+  meanScore: number | null;
+}
+
+export interface AnalyticsStats {
+  fanFavouriteRaw?: number | null;
+  fanRatioPercentile?: number | null;
+  popularityPercentile?: number | null;
+  fanFavouriteDiscoveryScore?: number | null;
+  fanFavouriteDiscoveryPercentile?: number | null;
+  fanFavouriteWeighted?: number | null;
+  fanFavouritePercentile?: number | null;
+}
+
+export interface PublishedDates {
+  start_date?: string | null;
+  end_date?: string | null;
+  start_date_is_estimated?: boolean | null;
+  end_date_is_estimated?: boolean | null;
+}
+
+export interface SeriesCatalog {
+  id: number;
+  display_title: string;
+  cover: string | null;
+  year: number | null;
+  status: string | null;
+  content_rating: ContentRating | string | null;
+  total_chapters: string | number | null;
+  tag_ids: number[];
+  stats: AniListStats;
+  analytics: AnalyticsStats;
+  published?: PublishedDates | null;
+  last_updated_at?: string | null;
+  authors?: string[];
+  artists?: string[];
+  links?: Record<string, string | null>;
+  source?: {
+    anilist?: { id: number; rating?: number | null; url?: string | null } | null;
+    animeplanet?: { id: string; rating?: number | null; url?: string | null } | null;
+    mangaupdates?: { id: string; rating?: number | null; url?: string | null } | null;
+  } | null;
+}
+
+export interface SeriesDetail extends SeriesCatalog {
+  state?: string;
+  type?: string;
+  description?: string | null;
+  is_licensed?: boolean;
+}
+
+export interface TagNode {
+  id: number;
+  name: string;
+  path: string;
+  is_genre: boolean;
+  parent_id: number | null;
+  level: number;
+}
+
+export interface HistoryEntry {
+  d: string;
+  p: number;
+  f: number;
+  s: number | null;
+  r: number;
+  rp: number;
+  pp: number;
+  ds: number;
+  dp: number;
+}
+
+export type HistoryMap = Record<string, HistoryEntry[]>;
+
+export interface SortRule {
+  id: string;
+  metric:
+    | "title"
+    | "year"
+    | "chapters"
+    | "popularity"
+    | "favourites"
+    | "meanScore"
+    | "fanFavouriteRaw"
+    | "fanRatioPercentile"
+    | "popularityPercentile"
+    | "fanFavouriteDiscoveryScore"
+    | "fanFavouriteDiscoveryPercentile"
+    | "releaseDate"
+    | "endDate"
+    | "popularityGrowth"
+    | "popularityGrowthPercent"
+    | "favouritesGrowth"
+    | "favouritesGrowthPercent"
+    | "meanScoreDelta"
+    | "fanFavouriteDelta"
+    | "discoveryScoreDelta"
+    | "discoveryPercentileDelta";
+  direction: "asc" | "desc";
+}
+
+export interface RollingWindow {
+  mode: "none" | "last" | "fixed";
+  amount: number;
+  unit: "days" | "weeks" | "months" | "years";
+  from?: string;
+  to?: string;
+}
+
+export interface FeedFilters {
+  sourceMode: SourceMode;
+  query: string;
+  includeTagIds: number[];
+  excludeTagIds: number[];
+  tagMatch: "any" | "all";
+  contentRatings: ContentRating[];
+  statuses: string[];
+  minChapters: number | null;
+  maxChapters: number | null;
+  minYear: number | null;
+  maxYear: number | null;
+  minPopularity: number | null;
+  maxPopularity: number | null;
+  minFavourites: number | null;
+  maxFavourites: number | null;
+  minMeanScore: number | null;
+  maxMeanScore: number | null;
+  dateField: "none" | "release" | "end";
+  rolling: RollingWindow;
+  labelIds: string[];
+}
+
+export interface VisibleTitleFields {
+  cover: boolean;
+  title: boolean;
+  rank: boolean;
+  genreChips: boolean;
+  status: boolean;
+  year: boolean;
+  chapters: boolean;
+  contentRating: boolean;
+  popularity: boolean;
+  favourites: boolean;
+  meanScore: boolean;
+  fanFavouriteRatio: boolean;
+  discoveryScore: boolean;
+  growthDelta: boolean;
+  labels: boolean;
+  sourceBadges: boolean;
+  quickActions: boolean;
+  description: boolean;
+  links: boolean;
+}
+
+export interface FeedViewSettings {
+  mode: ViewMode;
+  gridColumns: 1 | 2 | 3 | 4 | 5;
+  gridDensity: GridDensity;
+  listCoverSize: ListCoverSize;
+  listDensity: ListDensity;
+  visible: VisibleTitleFields;
+}
+
+export interface Feed {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  filters: FeedFilters;
+  sort: SortRule[];
+  view: FeedViewSettings;
+  coverTitleIds: number[];
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  kind: "manual" | "smart";
+  titleIds: number[];
+  feedId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LabelRule {
+  minMeanScore?: number | null;
+  minPopularity?: number | null;
+  minFavourites?: number | null;
+  includeTagIds?: number[];
+}
+
+export interface UserLabel {
+  id: string;
+  name: string;
+  color: string;
+  manualTitleIds: number[];
+  rule?: LabelRule | null;
+}
+
+export interface DetailVisibleFields {
+  cover: boolean;
+  title: boolean;
+  description: boolean;
+  genreTags: boolean;
+  allTags: boolean;
+  authorsArtists: boolean;
+  links: boolean;
+  labels: boolean;
+  popularity: boolean;
+  favourites: boolean;
+  meanScore: boolean;
+  fanFavouriteRatio: boolean;
+  discoveryMetrics: boolean;
+  growthNumbers: boolean;
+  status: boolean;
+  year: boolean;
+  chapters: boolean;
+  contentRating: boolean;
+}
+
+export interface AppSettings {
+  appName: string;
+  themeMode: ThemeMode;
+  accentColor: string;
+  dataSourceUrl: string;
+  adultUnlocked: boolean;
+  contentRatings: ContentRating[];
+  defaultFeedView: FeedViewSettings;
+  detailVisible: DetailVisibleFields;
+  detailCoverLayout: "left" | "right" | "center" | "background" | "minimal";
+  metricNames: Record<string, string>;
+  bottomNavItems: string[];
+  controlPlacement: ControlPlacement;
+  restoreLastSession: boolean;
+  nonAniListPlacement: NonAniListPlacement;
+  sharingDefault: "feed" | "folder" | "settings" | "full";
+  sfwShareDefault: boolean;
+  includeAppNameInShare: boolean;
+}
+
+export interface SyncMeta {
+  lastSync: string | null;
+  totalSeries: number;
+  historyFirstDate: string | null;
+  historyLastDate: string | null;
+  versionHash: string | null;
+  fileSizes?: Record<string, number>;
+  source: string;
+}
+
+export interface AppStateSnapshot {
+  feeds: Feed[];
+  folders: Folder[];
+  labels: UserLabel[];
+  settings: AppSettings;
+  activeFeedId: string | null;
+  lastRoute: string;
+}
+
+export interface QueryResult {
+  items: SeriesCatalog[];
+  limitedHistory: boolean;
+  missingDateData: boolean;
+  activeNotes: string[];
+}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Manhwa Library">
+  <defs>
+    <linearGradient id="g" x1="8" y1="7" x2="56" y2="57" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff006e"/>
+      <stop offset=".62" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#0d0d12"/>
+  <rect x="9" y="7" width="46" height="50" rx="8" fill="url(#g)"/>
+  <rect x="14" y="13" width="36" height="40" rx="5" fill="#12121a"/>
+  <path d="M19 21h10c6 0 10 4 10 10 0 4-2 7-5 9l7 10h-8l-6-9h-2v9h-6V21Zm6 5v10h4c2 0 4-2 4-5s-2-5-4-5h-4Z" fill="#fff"/>
+  <path d="M43 21h5v29h-5V21Z" fill="#fff" opacity=".86"/>
+</svg>
