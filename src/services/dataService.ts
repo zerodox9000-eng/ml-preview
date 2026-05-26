@@ -1,40 +1,29 @@
-import { inflate } from "pako";
-import { db, saveSyncMeta } from "../db/appDb";
-import { DATA_SOURCE_CANDIDATES } from "../domain/defaults";
-import type { HistoryMap, SeriesCatalog, SeriesDetail, SyncMeta, TagNode } from "../domain/types";
+export async function resolveDataSource(preferred?: string) {
+  const candidates = [preferred, ...DATA_SOURCE_CANDIDATES].filter(Boolean) as string[];
+  const seen = new Set<string>();
 
-function bytesToText(bytes: Uint8Array) {
-  return new TextDecoder("utf-8").decode(bytes);
-}
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
 
-async function fetchJson<T>(base: string, path: string, preferGzip = true): Promise<T> {
-  const targets = preferGzip ? [`${path}.gz`, path] : [path];
-  let lastError: unknown;
-  for (const target of targets) {
     try {
-      const response = await fetch(`${base}/${target}`, { cache: "no-cache" });
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-      if (target.endsWith(".gz")) {
-        const buffer = await response.arrayBuffer();
-        return JSON.parse(bytesToText(inflate(new Uint8Array(buffer)))) as T;
+      const response = await fetch(
+        `${candidate}/series/all.json.gz`,
+        { cache: "no-cache" }
+      );
+
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
       }
-      return (await response.json()) as T;
-    } catch (error) {
-      lastError = error;
+
+      return candidate;
+    } catch {
+      // Try the next source.
     }
   }
-  throw lastError;
-}
 
-async function fetchLocalJson<T>(path: string): Promise<T | null> {
-  try {
-    const response = await fetch(`${import.meta.env.BASE_URL}${path}`, { cache: "no-cache" });
-    if (!response.ok) return null;
-    if (path.endsWith(".gz")) {
-      const buffer = await response.arrayBuffer();
-      return JSON.parse(bytesToText(inflate(new Uint8Array(buffer)))) as T;
-    }
-    return (await response.json()) as T;
+  throw new Error("No working data source found.");
+}    return (await response.json()) as T;
   } catch {
     return null;
   }
