@@ -97,7 +97,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("mobile folder, label, detail, and search focus workflow works", async ({ page }) => {
+test("mobile grid, folder, detail, search, and recommendation workflow works", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByText("Build your first feed")).toBeVisible();
@@ -105,33 +105,42 @@ test("mobile folder, label, detail, and search focus workflow works", async ({ p
   await page.getByLabel("Feed name").fill("QA Feed");
   await page.getByRole("button", { name: "Save feed" }).click();
   await expect(page.getByTestId("title-card").first()).toBeVisible();
+  await expect(page.locator(".compact-metrics").first()).toContainText("Fan%");
 
   await page.getByRole("link", { name: "Search" }).click();
   const searchInput = page.getByPlaceholder("Search without keyboard collapse");
   await searchInput.fill("Solo Leveling");
   await expect(searchInput).toBeFocused();
   await expect(page.getByTestId("title-card").first()).toBeVisible();
+  await expect(page.getByText(/Titles \(1\)/)).toBeVisible();
 
   await page.getByRole("link", { name: "Folders" }).click();
   await page.getByPlaceholder("Folder name").fill("Favorites");
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByText("Favorites")).toBeVisible();
 
-  await page.getByRole("link", { name: "Labels" }).click();
-  await page.getByPlaceholder("Peak, Favorite, Try Later").fill("Peak");
-  await page.getByRole("button", { name: "Create label" }).click();
-  await expect(page.getByText("Peak")).toBeVisible();
-
   await page.getByRole("link", { name: "Search" }).click();
   await page.getByPlaceholder("Search without keyboard collapse").fill("Solo Leveling");
   await page.getByTestId("title-card").first().click();
-  await expect(page.getByText("Library Actions")).toBeVisible();
-  await page.getByRole("button", { name: "Add" }).click();
-  await page.getByRole("button", { name: "Apply" }).click();
-  await expect(page.getByText("Peak x")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Solo Leveling: Ragnarok" })).toBeVisible();
+  await page.getByRole("button", { name: "Detail settings" }).click();
+  await page.getByRole("button", { name: "description" }).click();
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByText("QA detail description.")).toBeVisible();
+  await expect(page.getByText("Fan%")).toBeVisible();
+  await page.getByRole("button", { name: "Add to folder" }).click();
 
   await page.getByRole("link", { name: "Folders" }).click();
-  await page.getByRole("link", { name: "Open" }).click();
+  await page.getByRole("link", { name: /Favorites/ }).click();
   await expect(page.getByText("1 manual titles")).toBeVisible();
   await expect(page.getByTestId("title-card").first()).toBeVisible();
+
+  await page.getByRole("link", { name: "Recs" }).click();
+  await page.getByLabel("Base title").fill("Solo");
+  await page.getByRole("button", { name: /Solo Leveling: Ragnarok/ }).click();
+  await expect(page.getByText("Most similar and loved")).toBeVisible();
+  await expect(page.getByTestId("title-card").first()).toBeVisible();
+  await page.getByRole("button", { name: "Save as folder" }).first().click();
+  await page.getByRole("link", { name: "Folders" }).click();
+  await expect(page.getByText("Most similar and loved")).toBeVisible();
 });

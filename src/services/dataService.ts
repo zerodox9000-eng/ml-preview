@@ -52,6 +52,41 @@ async function fetchLocalJson<T>(path: string): Promise<T | null> {
   }
 }
 
+function fixMangaBakaLink<T extends SeriesCatalog>(item: T): T {
+  if (item.links?.mangabaka?.includes("/series/")) {
+    return { ...item, links: { ...item.links, mangabaka: `https://mangabaka.org/${item.id}` } };
+  }
+  if (item.links?.mangabaka) return item;
+  return { ...item, links: { ...(item.links ?? {}), mangabaka: `https://mangabaka.org/${item.id}` } };
+}
+
+function mergeLiveCatalog(liveCatalog: SeriesCatalog[], enrichedCatalog: SeriesCatalog[] | null) {
+  const enrichedById = new Map((enrichedCatalog ?? []).map((item) => [item.id, fixMangaBakaLink(item)]));
+  const liveIds = new Set<number>();
+  const merged = liveCatalog.map((live) => {
+    liveIds.add(live.id);
+    const enriched = enrichedById.get(live.id);
+    const fixedLive = fixMangaBakaLink(live);
+    if (!enriched) return fixedLive;
+    return fixMangaBakaLink({
+      ...enriched,
+      ...fixedLive,
+      stats: fixedLive.stats ?? enriched.stats,
+      analytics: fixedLive.analytics ?? enriched.analytics,
+      source: fixedLive.source ?? enriched.source,
+      published: fixedLive.published ?? enriched.published,
+      last_updated_at: fixedLive.last_updated_at ?? enriched.last_updated_at,
+      authors: fixedLive.authors?.length ? fixedLive.authors : enriched.authors,
+      artists: fixedLive.artists?.length ? fixedLive.artists : enriched.artists,
+      links: { ...(enriched.links ?? {}), ...(fixedLive.links ?? {}) },
+    });
+  });
+  for (const enriched of enrichedById.values()) {
+    if (!liveIds.has(enriched.id)) merged.push(enriched);
+  }
+  return merged;
+}
+
 export async function resolveDataSource(preferred?: string) {
   const candidates = [preferred, ...DATA_SOURCE_CANDIDATES].filter(Boolean) as string[];
   const seen = new Set<string>();
@@ -85,15 +120,21 @@ export async function syncFrontendData(
 ) {
   const source = await resolveDataSource(preferredSource);
 
-  onProgress?.("Loading query-ready catalog");
+  onProgress?.("Loading current backend catalog");
+
+  const liveCatalog = await fetchJson<SeriesCatalog[]>(
+    source,
+    "series/all.json",
+    true
+  );
+
+  onProgress?.("Merging query-ready fields");
 
   const localCatalog = await fetchLocalJson<SeriesCatalog[]>(
     "data/query-index.json.gz"
   );
 
-  const catalog =
-    localCatalog ??
-    (await fetchJson<SeriesCatalog[]>(source, "series/all.json", true));
+  const catalog = mergeLiveCatalog(liveCatalog, localCatalog);
 
   onProgress?.("Downloading tags");
 
@@ -129,12 +170,13 @@ export async function syncFrontendData(
     "rw",
     db.catalog,
     db.tags,
+    db.details,
     db.history,
-    db.meta,
     async () => {
       await db.catalog.clear();
       await db.tags.clear();
       await db.history.clear();
+      await db.details.clear();
 
       await db.catalog.bulkPut(catalog);
       await db.tags.bulkPut(tags);
@@ -153,7 +195,7 @@ export async function syncFrontendData(
     totalSeries: catalog.length,
     historyFirstDate: historyDates[0] ?? null,
     historyLastDate: historyDates.at(-1) ?? null,
-    versionHash: `${catalog.length}-${historyDates.at(-1) ?? "no-history"}`,
+    versionHash: `live-merged-${catalog.length}-${historyDates.at(-1) ?? "no-history"}`,
     source,
   };
 
@@ -178,20 +220,18 @@ export async function loadCachedData() {
 
 export async function fetchSeriesDetail(source: string, id: number) {
   const cached = await db.details.get(id);
-
-  if (cached) return cached;
-
-  const detail = await fetchJson<SeriesDetail>(
-    source,
-    `details/${id}.json`,
-    false
-  );
-
-  if (detail.links?.mangabaka?.includes("/series/")) {
-    detail.links.mangabaka = `https://mangabaka.org/${detail.id}`;
+  try {
+    const detail = fixMangaBakaLink(
+      await fetchJson<SeriesDetail>(
+        source,
+        `details/${id}.json`,
+        false
+      )
+    );
+    await db.details.put(detail);
+    return detail;
+  } catch (error) {
+    if (cached) return cached;
+    throw error;
   }
-
-  await db.details.put(detail);
-
-  return detail;
 }

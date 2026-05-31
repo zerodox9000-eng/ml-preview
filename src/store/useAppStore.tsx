@@ -33,6 +33,7 @@ interface StoreState {
   deleteFeed: (id: string) => void;
   reorderFeeds: (id: string, direction: -1 | 1) => void;
   upsertFolder: (folder: Folder) => void;
+  deleteFolder: (id: string) => void;
   upsertLabel: (label: UserLabel) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
   refreshData: () => Promise<void>;
@@ -55,11 +56,19 @@ function mergeSettings(settings?: Partial<AppSettings>): AppSettings {
     defaultFeedView: {
       ...DEFAULT_SETTINGS.defaultFeedView,
       ...settings?.defaultFeedView,
+      mode: "grid",
+      metricSlots: settings?.defaultFeedView?.metricSlots?.length
+        ? settings.defaultFeedView.metricSlots.slice(0, 3)
+        : DEFAULT_SETTINGS.defaultFeedView.metricSlots,
       visible: {
         ...DEFAULT_SETTINGS.defaultFeedView.visible,
         ...settings?.defaultFeedView?.visible,
+        labels: false,
       },
     },
+    recommendationShelves: settings?.recommendationShelves?.length
+      ? settings.recommendationShelves
+      : DEFAULT_SETTINGS.recommendationShelves,
     detailVisible: {
       ...DEFAULT_SETTINGS.detailVisible,
       ...settings?.detailVisible,
@@ -67,6 +76,40 @@ function mergeSettings(settings?: Partial<AppSettings>): AppSettings {
     metricNames: {
       ...DEFAULT_SETTINGS.metricNames,
       ...settings?.metricNames,
+    },
+  };
+}
+
+function normalizeFeed(feed: Feed): Feed {
+  return {
+    ...feed,
+    filters: {
+      ...feed.filters,
+      sourceMode: feed.filters.sourceMode ?? "mixed",
+      sourceModes:
+        feed.filters.sourceModes?.length
+          ? feed.filters.sourceModes
+          : feed.filters.sourceMode === "anilist"
+            ? ["anilist"]
+            : feed.filters.sourceMode === "non-anilist"
+              ? ["non-anilist"]
+              : ["anilist", "non-anilist"],
+      contentRatings: feed.filters.contentRatings ?? DEFAULT_SETTINGS.contentRatings,
+      metricRanges: feed.filters.metricRanges ?? [],
+      labelIds: [],
+      query: "",
+    },
+    sort: feed.sort?.length ? feed.sort : [],
+    view: {
+      ...DEFAULT_SETTINGS.defaultFeedView,
+      ...feed.view,
+      mode: "grid",
+      metricSlots: feed.view?.metricSlots?.length ? feed.view.metricSlots.slice(0, 3) : DEFAULT_SETTINGS.defaultFeedView.metricSlots,
+      visible: {
+        ...DEFAULT_SETTINGS.defaultFeedView.visible,
+        ...feed.view?.visible,
+        labels: false,
+      },
     },
   };
 }
@@ -80,7 +123,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [tags, setTags] = useState<TagNode[]>([]);
   const [history, setHistory] = useState<HistoryMap>({});
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
-  const [feeds, setFeeds] = useState<Feed[]>(local.feeds ?? []);
+  const [feeds, setFeeds] = useState<Feed[]>((local.feeds ?? []).map(normalizeFeed));
   const [folders, setFolders] = useState<Folder[]>(local.folders ?? []);
   const [labels, setLabels] = useState<UserLabel[]>(local.labels ?? []);
   const [settings, setSettings] = useState<AppSettings>(mergeSettings(local.settings));
@@ -98,8 +141,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setHistory(cachedHistory);
       setSyncMeta(meta);
       setReady(true);
+      const hasLiveMergedCatalog = meta?.versionHash?.includes("live-merged");
       const hasQueryDates = cachedCatalog.some((item) => item.published?.start_date || item.published?.end_date);
-      if (cachedCatalog.length === 0 || !hasQueryDates) {
+      const online = typeof navigator === "undefined" || navigator.onLine;
+      if (cachedCatalog.length === 0 || !hasQueryDates || !hasLiveMergedCatalog || online) {
         await refreshData();
       }
     })();
@@ -134,7 +179,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }, [settings.dataSourceUrl]);
 
   const upsertFeed = useCallback((feed: Feed) => {
-    const updated = { ...feed, updatedAt: new Date().toISOString() };
+    const updated = normalizeFeed({ ...feed, updatedAt: new Date().toISOString() });
     setFeeds((current) => {
       const exists = current.some((item) => item.id === feed.id);
       return exists ? current.map((item) => (item.id === feed.id ? updated : item)) : [...current, updated];
@@ -165,6 +210,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const deleteFolder = useCallback((id: string) => {
+    setFolders((current) => current.filter((folder) => folder.id !== id));
+  }, []);
+
   const upsertLabel = useCallback((label: UserLabel) => {
     setLabels((current) => {
       const exists = current.some((item) => item.id === label.id);
@@ -188,14 +237,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const importSnapshot = useCallback((snapshot: Partial<AppStateSnapshot>, mode: "merge" | "replace") => {
     if (mode === "replace") {
-      setFeeds(snapshot.feeds ?? []);
+      setFeeds((snapshot.feeds ?? []).map(normalizeFeed));
       setFolders(snapshot.folders ?? []);
       setLabels(snapshot.labels ?? []);
       setSettings(mergeSettings(snapshot.settings));
       setActiveFeedId(snapshot.activeFeedId ?? null);
       return;
     }
-    setFeeds((current) => [...current, ...(snapshot.feeds ?? [])]);
+    setFeeds((current) => [...current, ...(snapshot.feeds ?? []).map(normalizeFeed)]);
     setFolders((current) => [...current, ...(snapshot.folders ?? [])]);
     setLabels((current) => [...current, ...(snapshot.labels ?? [])]);
     if (snapshot.settings) setSettings((current) => mergeSettings({ ...current, ...snapshot.settings }));
@@ -219,6 +268,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteFeed,
       reorderFeeds,
       upsertFolder,
+      deleteFolder,
       upsertLabel,
       updateSettings,
       refreshData,
@@ -241,6 +291,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteFeed,
       reorderFeeds,
       upsertFolder,
+      deleteFolder,
       upsertLabel,
       updateSettings,
       refreshData,

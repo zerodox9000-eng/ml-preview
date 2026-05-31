@@ -1,15 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Manhwa Library icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Manhwa Lib icon">
   <defs>
-    <linearGradient id="g" x1="76" y1="56" x2="436" y2="456" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ff006e"/>
-      <stop offset="0.58" stop-color="#8b5cf6"/>
-      <stop offset="1" stop-color="#14b8a6"/>
+    <linearGradient id="paint" x1="88" y1="64" x2="428" y2="456" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff0a73"/>
+      <stop offset=".54" stop-color="#6d5dfc"/>
+      <stop offset="1" stop-color="#16d7b1"/>
     </linearGradient>
+    <filter id="shadow" x="32" y="32" width="448" height="448" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000" flood-opacity=".35"/>
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0d0d12"/>
-  <rect x="76" y="56" width="360" height="400" rx="48" fill="url(#g)"/>
-  <rect x="116" y="96" width="280" height="320" rx="30" fill="#12121a"/>
-  <path d="M154 154h70c41 0 73 28 73 69 0 25-11 46-31 58l50 77h-57l-42-66h-17v66h-46V154Zm46 39v60h24c17 0 27-12 27-30 0-18-10-30-27-30h-24Z" fill="#fff"/>
-  <path d="M326 154h44v204h-44V154Z" fill="#fff" opacity=".86"/>
-  <path d="M120 426h272" stroke="#fff" stroke-width="20" stroke-linecap="round" opacity=".26"/>
+  <rect x="24" y="24" width="464" height="464" rx="132" fill="#08090d"/>
+  <g filter="url(#shadow)">
+    <rect x="76" y="58" width="360" height="396" rx="86" fill="url(#paint)"/>
+    <rect x="108" y="96" width="296" height="320" rx="58" fill="#0f1017" opacity=".94"/>
+    <path d="M144 348V164h48l64 93 64-93h48v184h-48V244l-48 69h-32l-48-69v104h-48Z" fill="#f8fbff"/>
+    <path d="M176 386h160" stroke="#f8fbff" stroke-width="18" stroke-linecap="round" opacity=".35"/>
+  </g>
 </svg>

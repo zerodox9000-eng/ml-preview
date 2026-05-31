@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'pwa-192.png', 'pwa-512.png', 'maskable-512.png'],
       manifest: {
-        name: 'Manhwa Library',
-        short_name: 'Manhwa Library',
-        description: 'Local-first manhwa discovery feeds powered by MangaBaka and AniList exports.',
+        name: 'Manhwa Lib',
+        short_name: 'Manhwa Lib',
+        description: 'Local-first manhwa discovery grids powered by MangaBaka and AniList exports.',
         theme_color: '#ff006e',
         background_color: '#0d0d12',
         display: 'standalone',

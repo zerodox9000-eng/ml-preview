@@ -8,6 +8,8 @@ import {
   Copy,
   Database,
   Download,
+  EllipsisVertical,
+  ExternalLink,
   Filter,
   FolderOpen,
   Home,
@@ -17,7 +19,7 @@ import {
   Library,
   ListFilter,
   Plus,
-  RotateCw,
+  Sparkles,
   Search,
   Settings,
   Share2,
@@ -38,7 +40,8 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { createFeed, DEFAULT_FILTERS, DEFAULT_SORT, DEFAULT_VISIBLE_TITLE_FIELDS } from "./domain/defaults";
-import { isGenreTag, labelMatchesSeries, runFeedQuery, tagRoot } from "./domain/query";
+import { isGenreTag, runFeedQuery, tagRoot } from "./domain/query";
+import { formatMetricValue, METRIC_DEFINITIONS, metricDefinition, metricValue } from "./domain/metrics";
 import { decodeSharePayload, exportCsv, makeShareUrl, type SharePayload } from "./domain/share";
 import type {
   AppSettings,
@@ -46,12 +49,13 @@ import type {
   Feed,
   FeedViewSettings,
   Folder,
+  MetricId,
+  MetricRange,
+  RecommendationShelf,
   SeriesCatalog,
   SeriesDetail,
-  SortRule,
+  SourceMode,
   TagNode,
-  UserLabel,
-  ViewMode,
 } from "./domain/types";
 import { fetchSeriesDetail } from "./services/dataService";
 import { AppStoreProvider, useAppStore } from "./store/useAppStore";
@@ -60,32 +64,13 @@ const NAV_ITEMS = [
   { id: "home", to: "/", label: "Home", icon: Home },
   { id: "feeds", to: "/feeds", label: "Feeds", icon: ListFilter },
   { id: "search", to: "/search", label: "Search", icon: Search },
+  { id: "recommendations", to: "/recommendations", label: "Recs", icon: Sparkles },
   { id: "folders", to: "/folders", label: "Folders", icon: FolderOpen },
   { id: "settings", to: "/settings", label: "Settings", icon: Settings },
 ];
 
-const SORT_OPTIONS: SortRule["metric"][] = [
-  "popularity",
-  "favourites",
-  "meanScore",
-  "fanFavouriteRaw",
-  "fanRatioPercentile",
-  "fanFavouriteDiscoveryScore",
-  "fanFavouriteDiscoveryPercentile",
-  "releaseDate",
-  "endDate",
-  "popularityGrowth",
-  "popularityGrowthPercent",
-  "favouritesGrowth",
-  "favouritesGrowthPercent",
-  "meanScoreDelta",
-  "fanFavouriteDelta",
-  "discoveryScoreDelta",
-  "discoveryPercentileDelta",
-  "year",
-  "chapters",
-  "title",
-];
+const SORT_OPTIONS: MetricId[] = METRIC_DEFINITIONS.map((definition) => definition.id);
+const RANGE_METRICS = METRIC_DEFINITIONS.filter((definition) => definition.filterable);
 
 const TITLE_FIELD_LABELS: Record<keyof FeedViewSettings["visible"], string> = {
   cover: "Cover",
@@ -127,35 +112,21 @@ function AppFrame() {
 
   useEffect(() => {
     document.documentElement.style.setProperty("--accent", store.settings.accentColor);
-    document.title = store.settings.appName || "Manhwa Library";
+    document.title = store.settings.appName || "Manhwa Lib";
   }, [store.settings.accentColor, store.settings.appName]);
 
   return (
     <div className="app-shell">
       <SessionRestorer />
-      <header className="top-app-bar">
-        <Link to="/" className="brand" aria-label="Home">
-          <span className="brand-mark">M</span>
-          <span className="brand-title">{store.settings.appName}</span>
-        </Link>
-        <div className="row">
-          <button className="icon-button" type="button" onClick={() => void store.refreshData()} aria-label="Refresh data">
-            <RotateCw size={18} />
-          </button>
-          <Link className="icon-button" to="/learn" aria-label="Learn">
-            <Info size={18} />
-          </Link>
-        </div>
-      </header>
-
       <main>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/feeds" element={<FeedsPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/recommendations" element={<RecommendationsPage />} />
+          <Route path="/recommendations/:id" element={<RecommendationsPage />} />
           <Route path="/folders" element={<FoldersPage />} />
           <Route path="/folders/:id" element={<FolderDetailPage />} />
-          <Route path="/labels" element={<LabelsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/learn" element={<LearnPage />} />
           <Route path="/title/:id" element={<TitleDetailPage />} />
@@ -361,12 +332,23 @@ function FeedView({ feed }: { feed: Feed }) {
       }),
     [runtimeFeed, store.catalog, store.history, store.labels, store.settings, store.syncMeta, store.tags],
   );
+  const saveFeedAsFolder = () => {
+    const now = new Date().toISOString();
+    store.upsertFolder({
+      id: crypto.randomUUID(),
+      name: `${feed.name} Folder`,
+      kind: "manual",
+      titleIds: query.items.map((item) => item.id),
+      createdAt: now,
+      updatedAt: now,
+    });
+  };
 
   return (
     <>
       <section className="section">
-        <div className="row">
-          <div>
+        <div className="row feed-view-header">
+          <div className="feed-view-title">
             <h1 style={{ margin: 0 }}>{feed.name}</h1>
             <div className="muted tiny">
               {query.items.length.toLocaleString()} titles
@@ -385,6 +367,9 @@ function FeedView({ feed }: { feed: Feed }) {
           </button>
           <button className="icon-button" type="button" onClick={() => setShareOpen(true)} aria-label="Share feed">
             <Share2 size={18} />
+          </button>
+          <button className="icon-button" type="button" onClick={saveFeedAsFolder} aria-label="Save feed as folder">
+            <FolderOpen size={18} />
           </button>
         </div>
         {searchOpen && (
@@ -429,12 +414,11 @@ function FeedView({ feed }: { feed: Feed }) {
 
 function ActiveFilterChips({ feed }: { feed: Feed }) {
   const chips = [
-    feed.filters.sourceMode,
+    ...(feed.filters.sourceModes?.length ? feed.filters.sourceModes : [feed.filters.sourceMode]),
     ...(feed.filters.query ? [`search: ${feed.filters.query}`] : []),
     ...feed.filters.contentRatings,
     ...feed.filters.statuses,
-    feed.view.mode,
-    `${feed.view.mode === "grid" ? `${feed.view.gridColumns} columns` : `${feed.view.listCoverSize} covers`}`,
+    `${feed.view.gridColumns} columns`,
   ];
   return (
     <div className="chips" style={{ marginTop: 12 }}>
@@ -448,7 +432,6 @@ function ActiveFilterChips({ feed }: { feed: Feed }) {
 }
 
 function TitleCollection({ items, feed, tags }: { items: SeriesCatalog[]; feed: Feed; tags: TagNode[] }) {
-  const store = useAppStore();
   const [visibleCount, setVisibleCount] = useState(120);
   const tagsById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
   useEffect(() => {
@@ -461,21 +444,8 @@ function TitleCollection({ items, feed, tags }: { items: SeriesCatalog[]; feed: 
       <div className="empty-state">
         <Filter size={28} />
         <strong>No titles matched this feed</strong>
-        <span className="muted">Loosen filters, unlock adult content if intended, or switch source mode.</span>
+        <span className="muted">Loosen filters, include gated tag families if intended, or switch source mode.</span>
       </div>
-    );
-  }
-  if (feed.view.mode === "list") {
-    const coverSize = feed.view.listCoverSize === "small" ? "58px" : feed.view.listCoverSize === "large" ? "116px" : "82px";
-    return (
-      <>
-        <div className={`title-list density-${feed.view.listDensity}`} style={{ "--row-cover": coverSize } as React.CSSProperties}>
-          {visibleItems.map((series, index) => (
-            <TitleRow key={series.id} series={series} rank={index + 1} view={feed.view} tagsById={tagsById} labels={store.labels} />
-          ))}
-        </div>
-        <LoadMore visibleCount={visibleCount} total={items.length} onMore={() => setVisibleCount((count) => count + 120)} />
-      </>
     );
   }
   return (
@@ -485,7 +455,7 @@ function TitleCollection({ items, feed, tags }: { items: SeriesCatalog[]; feed: 
         style={{ "--grid-columns": feed.view.gridColumns } as React.CSSProperties}
       >
         {visibleItems.map((series, index) => (
-          <TitleCard key={series.id} series={series} rank={index + 1} view={feed.view} tagsById={tagsById} labels={store.labels} />
+          <TitleCard key={series.id} series={series} rank={index + 1} view={feed.view} tagsById={tagsById} />
         ))}
       </div>
       <LoadMore visibleCount={visibleCount} total={items.length} onMore={() => setVisibleCount((count) => count + 120)} />
@@ -505,22 +475,83 @@ function LoadMore({ visibleCount, total, onMore }: { visibleCount: number; total
 }
 
 function Cover({ series }: { series: SeriesCatalog }) {
+  const initials = series.display_title
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
   return (
     <div className="cover-wrap">
-      {series.cover ? <img src={series.cover} alt="" loading="lazy" /> : <div className="cover-fallback">{series.display_title}</div>}
+      {series.cover ? <img src={series.cover} alt="" loading="lazy" /> : <div className="cover-fallback cover-fallback-initials">{initials || "ML"}</div>}
     </div>
   );
 }
 
-function metricText(series: SeriesCatalog, metric: keyof AppSettings["metricNames"] | string) {
-  if (metric === "popularity") return series.stats.popularity?.toLocaleString() ?? "No pop";
-  if (metric === "favourites") return series.stats.favourites?.toLocaleString() ?? "No fav";
-  if (metric === "meanScore") return series.stats.meanScore == null ? "No score" : `${series.stats.meanScore}`;
-  if (metric === "fanFavouriteRaw") return series.analytics.fanFavouriteRaw == null ? "No ratio" : `${series.analytics.fanFavouriteRaw}%`;
-  if (metric === "fanFavouriteDiscoveryScore") {
-    return series.analytics.fanFavouriteDiscoveryScore == null ? "No discovery" : `${series.analytics.fanFavouriteDiscoveryScore}`;
-  }
-  return "";
+function MosaicCover({ items, title }: { items: SeriesCatalog[]; title: string }) {
+  const covers = items.filter((item) => item.cover).slice(0, 6);
+  return (
+    <div className="mosaic-cover" aria-hidden="true">
+      {covers.length === 0 ? (
+        <div className="mosaic-fallback">{title.slice(0, 2).toUpperCase()}</div>
+      ) : (
+        covers.map((item, index) => <img src={item.cover ?? ""} alt="" key={`${item.id}-${index}`} loading="lazy" />)
+      )}
+    </div>
+  );
+}
+
+function CollectionCard({
+  title,
+  meta,
+  covers,
+  to,
+  onOpen,
+  actions,
+}: {
+  title: string;
+  meta: string;
+  covers: SeriesCatalog[];
+  to: string;
+  onOpen?: () => void;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <article className="collection-card">
+      <Link className="collection-card-main" to={to} onClick={onOpen}>
+        <MosaicCover items={covers} title={title} />
+        <strong>{title}</strong>
+        <span className="muted tiny">{meta}</span>
+      </Link>
+      {actions && <div className="collection-actions">{actions}</div>}
+    </article>
+  );
+}
+
+function HorizontalGridSection({
+  title,
+  children,
+  to,
+}: {
+  title: string;
+  children: React.ReactNode;
+  to?: string;
+}) {
+  return (
+    <section className="horizontal-section">
+      <div className="row section-row">
+        <h2 className="section-title">{title}</h2>
+        <span className="spacer" />
+        {to && (
+          <Link className="button ghost" to={to}>
+            View all
+          </Link>
+        )}
+      </div>
+      <div className="horizontal-grid">{children}</div>
+    </section>
+  );
 }
 
 function GenreChips({ series, tagsById }: { series: SeriesCatalog; tagsById: Map<number, TagNode> }) {
@@ -545,13 +576,11 @@ function TitleCard({
   rank,
   view,
   tagsById,
-  labels,
 }: {
   series: SeriesCatalog;
   rank: number;
   view: FeedViewSettings;
   tagsById: Map<number, TagNode>;
-  labels: UserLabel[];
 }) {
   const visible = view.visible;
   return (
@@ -569,44 +598,10 @@ function TitleCard({
         <div className="title-meta">
           {visible.title && <span className="title-name">{series.display_title}</span>}
           {visible.genreChips && <GenreChips series={series} tagsById={tagsById} />}
-          {visible.labels && <SeriesLabelChips series={series} labels={labels} />}
           {!visible.cover && <TitleMetrics series={series} view={view} />}
         </div>
       </Link>
       {visible.quickActions && <QuickTitleAction series={series} />}
-    </div>
-  );
-}
-
-function TitleRow({
-  series,
-  rank,
-  view,
-  tagsById,
-  labels,
-}: {
-  series: SeriesCatalog;
-  rank: number;
-  view: FeedViewSettings;
-  tagsById: Map<number, TagNode>;
-  labels: UserLabel[];
-}) {
-  return (
-    <div className="title-row-wrap">
-      <Link to={`/title/${series.id}`} className="title-row" data-testid="title-row">
-        {view.visible.cover ? <Cover series={series} /> : <span className="rank">{rank}</span>}
-        <div className="title-meta">
-          <div className="row">
-            {view.visible.rank && <span className="chip">#{rank}</span>}
-            {view.visible.title && <span className="title-name">{series.display_title}</span>}
-          </div>
-          {view.visible.description && <p className="muted tiny">Description loads on the full detail page.</p>}
-          {view.visible.genreChips && <GenreChips series={series} tagsById={tagsById} />}
-          {view.visible.labels && <SeriesLabelChips series={series} labels={labels} />}
-          <TitleMetrics series={series} view={view} />
-        </div>
-      </Link>
-      {view.visible.quickActions && <QuickTitleAction series={series} />}
     </div>
   );
 }
@@ -623,34 +618,15 @@ function QuickTitleAction({ series }: { series: SeriesCatalog }) {
   );
 }
 
-function SeriesLabelChips({ series, labels }: { series: SeriesCatalog; labels: UserLabel[] }) {
-  const visibleLabels = labels.filter((label) => labelMatchesSeries(label, series)).slice(0, 3);
-  if (visibleLabels.length === 0) return null;
-  return (
-    <div className="chips label-chips">
-      {visibleLabels.map((label) => (
-        <span className="chip label-chip" style={{ "--label-color": label.color } as React.CSSProperties} key={label.id}>
-          {label.name}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function TitleMetrics({ series, view, compact = false }: { series: SeriesCatalog; view: FeedViewSettings; compact?: boolean }) {
-  const fields = view.visible;
+  const metricSlots: MetricId[] = (view.metricSlots?.length ? view.metricSlots : (["fanFavouriteRaw", "popularity", "favourites"] as MetricId[])).slice(0, 3);
   return (
     <div className={`metrics ${compact ? "compact-metrics" : ""}`}>
-      {fields.popularity && <span>Pop {metricText(series, "popularity")}</span>}
-      {fields.favourites && <span>Fav {metricText(series, "favourites")}</span>}
-      {fields.meanScore && <span>Score {metricText(series, "meanScore")}</span>}
-      {fields.fanFavouriteRatio && <span>Ratio {metricText(series, "fanFavouriteRaw")}</span>}
-      {fields.discoveryScore && <span>Disc {metricText(series, "fanFavouriteDiscoveryScore")}</span>}
-      {fields.status && series.status && <span>{series.status}</span>}
-      {fields.year && series.year && <span>{series.year}</span>}
-      {fields.chapters && series.total_chapters && <span>{series.total_chapters} ch</span>}
-      {fields.contentRating && series.content_rating && <span>{series.content_rating}</span>}
-      {fields.sourceBadges && <span>{series.stats.popularity == null ? "Non-AniList" : "AniList"}</span>}
+      {metricSlots.map((metric) => (
+        <span key={metric}>
+          <b>{metricDefinition(metric).shortLabel}</b> {formatMetricValue(series, metric)}
+        </span>
+      ))}
     </div>
   );
 }
@@ -667,45 +643,59 @@ function FeedsPage() {
     return copy;
   }, [sortMode, store.feeds]);
 
+  const feedItems = (feed: Feed) =>
+    runFeedQuery({
+      feed,
+      series: store.catalog,
+      tags: store.tags,
+      history: store.history,
+      labels: store.labels,
+      settings: store.settings,
+      metaHistoryFirst: store.syncMeta?.historyFirstDate,
+      metaHistoryLast: store.syncMeta?.historyLastDate,
+    }).items;
   return (
     <div className="page">
       <div className="row">
         <h1>Feeds</h1>
         <span className="spacer" />
-        <select className="select" style={{ width: 150 }} value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)}>
-          <option value="manual">Manual</option>
-          <option value="created">Created</option>
-          <option value="updated">Updated</option>
-          <option value="title">Title</option>
-        </select>
+        <div className="segmented sort-segment">
+          {(["manual", "created", "updated", "title"] as const).map((mode) => (
+            <button className={`segment ${sortMode === mode ? "active" : ""}`} type="button" key={mode} onClick={() => setSortMode(mode)}>
+              {mode}
+            </button>
+          ))}
+        </div>
         <button className="icon-button" type="button" onClick={() => setEditorFeed(createFeed("New Feed"))} aria-label="Create feed">
           <Plus size={18} />
         </button>
       </div>
-      <div className="settings-list">
+      <div className="collection-grid">
         {displayed.map((feed) => (
-          <div className="setting-row" key={feed.id}>
-            <div>
-              <strong>{feed.name}</strong>
-              <div className="muted tiny">
-                {feed.view.mode} / {feed.filters.sourceMode} / {feed.filters.contentRatings.join(", ")}
-              </div>
-            </div>
-            <div className="row">
-              <button className="icon-button" type="button" onClick={() => store.reorderFeeds(feed.id, -1)} aria-label="Move up">
-                <ArrowUp size={16} />
-              </button>
-              <button className="icon-button" type="button" onClick={() => store.reorderFeeds(feed.id, 1)} aria-label="Move down">
-                <ArrowDown size={16} />
-              </button>
-              <button className="button" type="button" onClick={() => setEditorFeed(feed)}>
-                Edit
-              </button>
-              <button className="icon-button" type="button" onClick={() => store.deleteFeed(feed.id)} aria-label="Delete feed">
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
+          <CollectionCard
+            key={feed.id}
+            title={feed.name}
+            meta={`${feedItems(feed).length.toLocaleString()} titles`}
+            covers={feedItems(feed).slice(0, 6)}
+            to="/"
+            onOpen={() => store.setActiveFeedId(feed.id)}
+            actions={
+              <>
+                <button className="icon-button" type="button" onClick={() => store.reorderFeeds(feed.id, -1)} aria-label="Move up">
+                  <ArrowUp size={16} />
+                </button>
+                <button className="icon-button" type="button" onClick={() => store.reorderFeeds(feed.id, 1)} aria-label="Move down">
+                  <ArrowDown size={16} />
+                </button>
+                <button className="icon-button" type="button" onClick={() => setEditorFeed(feed)} aria-label="Edit feed">
+                  <SlidersHorizontal size={16} />
+                </button>
+                <button className="icon-button danger" type="button" onClick={() => store.deleteFeed(feed.id)} aria-label="Delete feed">
+                  <Trash2 size={16} />
+                </button>
+              </>
+            }
+          />
         ))}
       </div>
       <BottomDrawer title={editorFeed?.name ?? "Feed"} open={Boolean(editorFeed)} onOpenChange={(open) => !open && setEditorFeed(null)}>
@@ -734,14 +724,10 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
   );
   const filteredTags = useMemo(() => {
     const q = tagSearch.trim().toLowerCase();
-    const tags = q
+    return q
       ? store.tags.filter((tag) => `${tag.name} ${tag.path}`.toLowerCase().includes(q))
-      : store.tags.filter((tag) => tag.level <= 2 || tag.is_genre);
-    const visibleTags = store.settings.adultUnlocked
-      ? tags
-      : tags.filter((tag) => !/(Boys Love|Girls Love|Smut|Hentai|Yaoi|Yuri|Shounen Ai|Shoujo Ai|Danmei|Bara)/i.test(`${tag.name} ${tag.path}`));
-    return visibleTags.slice(0, 260);
-  }, [store.settings.adultUnlocked, store.tags, tagSearch]);
+      : store.tags;
+  }, [store.tags, tagSearch]);
 
   const updateFilters = (patch: Partial<Feed["filters"]>) => {
     setDraft((current) => ({ ...current, filters: { ...current.filters, ...patch } }));
@@ -759,6 +745,15 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
     }));
   };
   const toggleArrayValue = <T,>(values: T[], value: T) => (values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  const toggleSourceMode = (mode: "anilist" | "non-anilist") => {
+    const current: SourceMode[] = draft.filters.sourceModes?.length ? draft.filters.sourceModes : ["anilist", "non-anilist"];
+    const next = current.includes(mode) ? current.filter((item) => item !== mode) : [...current, mode];
+    const normalized: SourceMode[] = next.length > 0 ? next : [mode];
+    updateFilters({
+      sourceModes: normalized,
+      sourceMode: normalized.length === 2 ? "mixed" : normalized[0],
+    });
+  };
   const cycleTag = (tagId: number) => {
     const include = draft.filters.includeTagIds.includes(tagId);
     const exclude = draft.filters.excludeTagIds.includes(tagId);
@@ -780,18 +775,19 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
       </div>
 
       <h2 className="section-title">Filters</h2>
-      <div className="field-grid">
-        <div className="field">
-          <label>Source mode</label>
-          <select className="select" value={draft.filters.sourceMode} onChange={(event) => updateFilters({ sourceMode: event.target.value as Feed["filters"]["sourceMode"] })}>
-            <option value="anilist">AniList only</option>
-            <option value="non-anilist">Non-AniList only</option>
-            <option value="mixed">Mixed/manual</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Search text</label>
-          <input className="input" value={draft.filters.query} onChange={(event) => updateFilters({ query: event.target.value })} placeholder="Title, tag, author" />
+      <div className="field">
+        <span className="small-label">Source</span>
+        <div className="segmented">
+          {(["anilist", "non-anilist"] as const).map((mode) => (
+            <button
+              className={`segment ${draft.filters.sourceModes?.includes(mode) ? "active" : ""}`}
+              type="button"
+              key={mode}
+              onClick={() => toggleSourceMode(mode)}
+            >
+              {mode === "anilist" ? "AniList" : "Non-AniList"}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -809,6 +805,7 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
             </button>
           ))}
         </div>
+        <p className="muted tiny">Sensitive BL, GL, Smut, Hentai, and child tags stay excluded by default until included in Tags.</p>
       </div>
 
       <div className="field">
@@ -833,27 +830,57 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
         <NumberField label="Min year" value={draft.filters.minYear} onChange={(value) => updateFilters({ minYear: value })} />
         <NumberField label="Max year" value={draft.filters.maxYear} onChange={(value) => updateFilters({ maxYear: value })} />
         <NumberField label="Min popularity" value={draft.filters.minPopularity} onChange={(value) => updateFilters({ minPopularity: value })} />
+        <NumberField label="Max popularity" value={draft.filters.maxPopularity} onChange={(value) => updateFilters({ maxPopularity: value })} />
         <NumberField label="Min favourites" value={draft.filters.minFavourites} onChange={(value) => updateFilters({ minFavourites: value })} />
+        <NumberField label="Max favourites" value={draft.filters.maxFavourites} onChange={(value) => updateFilters({ maxFavourites: value })} />
         <NumberField label="Min mean score" value={draft.filters.minMeanScore} onChange={(value) => updateFilters({ minMeanScore: value })} />
+        <NumberField label="Max mean score" value={draft.filters.maxMeanScore} onChange={(value) => updateFilters({ maxMeanScore: value })} />
       </div>
+
+      <MetricRangeEditor
+        ranges={draft.filters.metricRanges ?? []}
+        onChange={(metricRanges) => updateFilters({ metricRanges })}
+      />
 
       <h2 className="section-title">Rolling Dates</h2>
       <div className="field-grid">
         <div className="field">
           <label>Date field</label>
-          <select className="select" value={draft.filters.dateField} onChange={(event) => updateFilters({ dateField: event.target.value as Feed["filters"]["dateField"] })}>
-            <option value="none">No date filter</option>
-            <option value="release">Release date</option>
-            <option value="end">End/completion date</option>
-          </select>
+          <div className="segmented">
+            {[
+              ["none", "None"],
+              ["release", "Release"],
+              ["end", "End"],
+            ].map(([value, label]) => (
+              <button
+                className={`segment ${draft.filters.dateField === value ? "active" : ""}`}
+                type="button"
+                key={value}
+                onClick={() => updateFilters({ dateField: value as Feed["filters"]["dateField"] })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="field">
           <label>Window mode</label>
-          <select className="select" value={draft.filters.rolling.mode} onChange={(event) => updateFilters({ rolling: { ...draft.filters.rolling, mode: event.target.value as Feed["filters"]["rolling"]["mode"] } })}>
-            <option value="none">None</option>
-            <option value="last">Last X duration</option>
-            <option value="fixed">Fixed range</option>
-          </select>
+          <div className="segmented">
+            {[
+              ["none", "None"],
+              ["last", "Last X"],
+              ["fixed", "Fixed"],
+            ].map(([value, label]) => (
+              <button
+                className={`segment ${draft.filters.rolling.mode === value ? "active" : ""}`}
+                type="button"
+                key={value}
+                onClick={() => updateFilters({ rolling: { ...draft.filters.rolling, mode: value as Feed["filters"]["rolling"]["mode"] } })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <NumberField
           label="Amount"
@@ -862,12 +889,18 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
         />
         <div className="field">
           <label>Unit</label>
-          <select className="select" value={draft.filters.rolling.unit} onChange={(event) => updateFilters({ rolling: { ...draft.filters.rolling, unit: event.target.value as Feed["filters"]["rolling"]["unit"] } })}>
-            <option value="days">Days</option>
-            <option value="weeks">Weeks</option>
-            <option value="months">Months</option>
-            <option value="years">Years</option>
-          </select>
+          <div className="segmented compact-segments">
+            {(["days", "weeks", "months", "years"] as const).map((unit) => (
+              <button
+                className={`segment ${draft.filters.rolling.unit === unit ? "active" : ""}`}
+                type="button"
+                key={unit}
+                onClick={() => updateFilters({ rolling: { ...draft.filters.rolling, unit } })}
+              >
+                {unit}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="field">
           <label>From</label>
@@ -886,10 +919,14 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
       </div>
       <div className="field">
         <label>Tag match</label>
-        <select className="select" value={draft.filters.tagMatch} onChange={(event) => updateFilters({ tagMatch: event.target.value as Feed["filters"]["tagMatch"] })}>
-          <option value="any">Any included tag</option>
-          <option value="all">All included tags</option>
-        </select>
+        <button
+          className={`switch-row ${draft.filters.tagMatch === "any" ? "" : "on"}`}
+          type="button"
+          onClick={() => updateFilters({ tagMatch: draft.filters.tagMatch === "any" ? "all" : "any" })}
+        >
+          <span>{draft.filters.tagMatch === "any" ? "Match ANY included tag" : "Match ALL included tags"}</span>
+          <span className="switch-dot" />
+        </button>
       </div>
       <TagChipCloud tags={filteredTags} feed={draft} onTagClick={cycleTag} />
 
@@ -897,36 +934,42 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
       <div className="settings-list">
         {draft.sort.map((rule, index) => (
           <div className="setting-row" key={rule.id}>
-            <div className="field-grid" style={{ margin: 0 }}>
-              <select
-                className="select"
-                value={rule.metric}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    sort: current.sort.map((item) => (item.id === rule.id ? { ...item, metric: event.target.value as SortRule["metric"] } : item)),
-                  }))
-                }
-              >
+            <div className="sort-editor">
+              <div className="metric-choice">
                 {SORT_OPTIONS.map((option) => (
-                  <option value={option} key={option}>
-                    {option}
-                  </option>
+                  <button
+                    className={`metric-option ${rule.metric === option ? "active" : ""}`}
+                    type="button"
+                    key={option}
+                    onClick={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        sort: current.sort.map((item) => (item.id === rule.id ? { ...item, metric: option } : item)),
+                      }))
+                    }
+                    title={metricDefinition(option).help}
+                  >
+                    {metricDefinition(option).shortLabel}
+                  </button>
                 ))}
-              </select>
-              <select
-                className="select"
-                value={rule.direction}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    sort: current.sort.map((item) => (item.id === rule.id ? { ...item, direction: event.target.value as SortRule["direction"] } : item)),
-                  }))
-                }
-              >
-                <option value="desc">Descending</option>
-                <option value="asc">Ascending</option>
-              </select>
+              </div>
+              <div className="segmented compact-segments">
+                {(["desc", "asc"] as const).map((direction) => (
+                  <button
+                    className={`segment ${rule.direction === direction ? "active" : ""}`}
+                    type="button"
+                    key={direction}
+                    onClick={() =>
+                      setDraft((current) => ({
+                        ...current,
+                        sort: current.sort.map((item) => (item.id === rule.id ? { ...item, direction } : item)),
+                      }))
+                    }
+                  >
+                    {direction === "desc" ? "High first" : "Low first"}
+                  </button>
+                ))}
+              </div>
             </div>
             <button
               className="icon-button"
@@ -950,33 +993,27 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
       <h2 className="section-title">Title View</h2>
       <div className="field-grid">
         <div className="field">
-          <label>View mode</label>
-          <select className="select" value={draft.view.mode} onChange={(event) => updateView({ mode: event.target.value as ViewMode })}>
-            <option value="grid">Grid</option>
-            <option value="list">List</option>
-          </select>
-        </div>
-        <div className="field">
           <label>Grid columns</label>
-          <select className="select" value={draft.view.gridColumns} onChange={(event) => updateView({ gridColumns: Number(event.target.value) as FeedViewSettings["gridColumns"] })}>
+          <div className="segmented compact-segments">
             {[1, 2, 3, 4, 5].map((value) => (
-              <option value={value} key={value}>
+              <button
+                className={`segment ${draft.view.gridColumns === value ? "active" : ""}`}
+                type="button"
+                key={value}
+                onClick={() => updateView({ gridColumns: value as FeedViewSettings["gridColumns"] })}
+              >
                 {value}
-              </option>
+              </button>
             ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>List cover</label>
-          <select className="select" value={draft.view.listCoverSize} onChange={(event) => updateView({ listCoverSize: event.target.value as FeedViewSettings["listCoverSize"] })}>
-            <option value="small">Small</option>
-            <option value="medium">Medium</option>
-            <option value="large">Large</option>
-          </select>
+          </div>
         </div>
       </div>
+      <MetricSlotPicker
+        slots={draft.view.metricSlots ?? []}
+        onChange={(metricSlots) => updateView({ metricSlots })}
+      />
       <div className="chips">
-        {(Object.keys(DEFAULT_VISIBLE_TITLE_FIELDS) as (keyof FeedViewSettings["visible"])[]).map((key) => (
+        {(Object.keys(DEFAULT_VISIBLE_TITLE_FIELDS) as (keyof FeedViewSettings["visible"])[]).filter((key) => key !== "labels").map((key) => (
           <button className={`chip chipbutton ${draft.view.visible[key] ? "active" : ""}`} type="button" key={key} onClick={() => toggleVisible(key)}>
             {TITLE_FIELD_LABELS[key]}
           </button>
@@ -988,7 +1025,16 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
           Cancel
         </button>
         <span className="spacer" />
-        <button className="button" type="button" onClick={() => setDraft({ ...draft, filters: { ...DEFAULT_FILTERS } })}>
+        <button
+          className="button"
+          type="button"
+          onClick={() =>
+            setDraft({
+              ...draft,
+              filters: { ...DEFAULT_FILTERS, sourceModes: [...(DEFAULT_FILTERS.sourceModes ?? [])], contentRatings: [...DEFAULT_FILTERS.contentRatings], metricRanges: [] },
+            })
+          }
+        >
           Reset filters
         </button>
         <button className="button primary" type="button" onClick={() => onSave(draft)}>
@@ -1013,7 +1059,83 @@ function NumberField({ label, value, onChange }: { label: string; value: number 
   );
 }
 
+function MetricRangeEditor({ ranges, onChange }: { ranges: MetricRange[]; onChange: (ranges: MetricRange[]) => void }) {
+  const addRange = () => {
+    const used = new Set(ranges.map((range) => range.metric));
+    const nextMetric = RANGE_METRICS.find((metric) => !used.has(metric.id))?.id ?? "fanFavouriteRaw";
+    onChange([...ranges, { id: crypto.randomUUID(), metric: nextMetric, min: null, max: null }]);
+  };
+  const update = (id: string, patch: Partial<MetricRange>) => {
+    onChange(ranges.map((range) => (range.id === id ? { ...range, ...patch } : range)));
+  };
+  return (
+    <section className="section compact-section">
+      <div className="row">
+        <h2 className="section-title">Additional Stat Ranges</h2>
+        <span className="spacer" />
+        <button className="button" type="button" onClick={addRange}>
+          <Plus size={16} /> Add
+        </button>
+      </div>
+      {ranges.length === 0 ? <p className="muted tiny">Add min/max filters for any metric, including Fan%, discovery, growth, year, and chapters.</p> : null}
+      <div className="settings-list">
+        {ranges.map((range) => (
+          <div className="range-row" key={range.id}>
+            <div className="metric-choice">
+              {RANGE_METRICS.map((metric) => (
+                <button
+                  className={`metric-option ${range.metric === metric.id ? "active" : ""}`}
+                  type="button"
+                  key={metric.id}
+                  onClick={() => update(range.id, { metric: metric.id })}
+                >
+                  {metric.shortLabel}
+                </button>
+              ))}
+            </div>
+            <NumberField label="Min" value={range.min} onChange={(min) => update(range.id, { min })} />
+            <NumberField label="Max" value={range.max} onChange={(max) => update(range.id, { max })} />
+            <button className="icon-button" type="button" onClick={() => onChange(ranges.filter((item) => item.id !== range.id))} aria-label="Remove stat range">
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MetricSlotPicker({ slots, onChange }: { slots: MetricId[]; onChange: (slots: MetricId[]) => void }) {
+  const current = slots.length ? slots.slice(0, 3) : ["fanFavouriteRaw", "popularity", "favourites"] as MetricId[];
+  const toggle = (metric: MetricId) => {
+    if (current.includes(metric)) {
+      onChange(current.filter((item) => item !== metric));
+      return;
+    }
+    onChange([...current, metric].slice(-3));
+  };
+  return (
+    <div className="field">
+      <span className="small-label">Cover stats - max 3</span>
+      <div className="metric-choice">
+        {METRIC_DEFINITIONS.filter((metric) => metric.id !== "title").map((metric) => (
+          <button
+            className={`metric-option ${current.includes(metric.id) ? "active" : ""}`}
+            type="button"
+            key={metric.id}
+            onClick={() => toggle(metric.id)}
+            title={metric.help}
+          >
+            {metric.shortLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TagChipCloud({ tags, feed, onTagClick }: { tags: TagNode[]; feed: Feed; onTagClick: (id: number) => void }) {
+  const [expandedRoots, setExpandedRoots] = useState<Record<string, boolean>>({});
   const grouped = useMemo(() => {
     const map = new Map<string, TagNode[]>();
     for (const tag of tags) {
@@ -1025,19 +1147,37 @@ function TagChipCloud({ tags, feed, onTagClick }: { tags: TagNode[]; feed: Feed;
       const ai = order.includes(a[0]) ? order.indexOf(a[0]) : 999;
       const bi = order.includes(b[0]) ? order.indexOf(b[0]) : 999;
       return ai - bi || a[0].localeCompare(b[0]);
-    });
+    }).map(([root, group]) => [root, group.sort((a, b) => a.path.localeCompare(b.path) || a.name.localeCompare(b.name))] as [string, TagNode[]]);
   }, [tags]);
+  const selectedTags = tags.filter((tag) => feed.filters.includeTagIds.includes(tag.id) || feed.filters.excludeTagIds.includes(tag.id));
 
   return (
     <div className="tag-tree">
+      {selectedTags.length > 0 && (
+        <div className="selected-tags">
+          <span className="small-label">Selected</span>
+          <div className="chips">
+            {selectedTags.map((tag) => (
+              <button
+                className={`chip chipbutton ${feed.filters.includeTagIds.includes(tag.id) ? "active" : "exclude"}`}
+                type="button"
+                key={tag.id}
+                onClick={() => onTagClick(tag.id)}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {grouped.map(([root, group]) => (
         <details className="tag-group" key={root} open={root === "Genres"}>
           <summary className="tag-summary">
             <span>{root}</span>
             <span className="muted tiny">{group.length}</span>
           </summary>
-          <div className="chips">
-            {group.map((tag) => {
+          <div className="chips tag-chip-grid">
+            {(expandedRoots[root] ? group : group.slice(0, root === "Genres" ? 80 : 36)).map((tag) => {
               const included = feed.filters.includeTagIds.includes(tag.id);
               const excluded = feed.filters.excludeTagIds.includes(tag.id);
               return (
@@ -1053,6 +1193,15 @@ function TagChipCloud({ tags, feed, onTagClick }: { tags: TagNode[]; feed: Feed;
               );
             })}
           </div>
+          {group.length > (root === "Genres" ? 80 : 36) && (
+            <button
+              className="button ghost"
+              type="button"
+              onClick={() => setExpandedRoots((current) => ({ ...current, [root]: !current[root] }))}
+            >
+              {expandedRoots[root] ? "Show less" : `Show all ${group.length}`}
+            </button>
+          )}
         </details>
       ))}
     </div>
@@ -1066,10 +1215,11 @@ function SearchPage() {
     const feed = createFeed("Search results");
     feed.filters.query = query;
     feed.filters.sourceMode = "mixed";
-    feed.filters.contentRatings = store.settings.adultUnlocked ? ["safe", "suggestive", "erotica", "pornographic"] : store.settings.contentRatings;
-    feed.view = store.settings.defaultFeedView;
+    feed.filters.sourceModes = ["anilist", "non-anilist"];
+    feed.filters.contentRatings = store.settings.contentRatings;
+    feed.view = { ...store.settings.defaultFeedView, gridColumns: 3 };
     return feed;
-  }, [query, store.settings.adultUnlocked, store.settings.contentRatings, store.settings.defaultFeedView]);
+  }, [query, store.settings.contentRatings, store.settings.defaultFeedView]);
   const results = useMemo(
     () =>
       query.trim()
@@ -1086,6 +1236,10 @@ function SearchPage() {
         : [],
     [query, searchFeed, store],
   );
+  const matchingFeeds = store.feeds.filter((feed) => feed.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const matchingFolders = store.folders.filter((folder) => folder.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const shelfMatches = store.settings.recommendationShelves.filter((shelf) => shelf.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const tagsById = useMemo(() => new Map(store.tags.map((tag) => [tag.id, tag])), [store.tags]);
   return (
     <div className="page">
       <h1>Search</h1>
@@ -1099,7 +1253,342 @@ function SearchPage() {
           autoComplete="off"
         />
       </div>
-      {query.trim() ? <TitleCollection items={results} feed={searchFeed} tags={store.tags} /> : <p className="muted">Start typing to search the local catalog.</p>}
+      {query.trim() ? (
+        <>
+          <HorizontalGridSection title={`Titles (${results.length.toLocaleString()})`}>
+            {results.slice(0, 18).map((series, index) => (
+              <TitleCard key={series.id} series={series} rank={index + 1} view={searchFeed.view} tagsById={tagsById} />
+            ))}
+          </HorizontalGridSection>
+          <HorizontalGridSection title={`Feeds (${matchingFeeds.length})`} to="/feeds">
+            {matchingFeeds.map((feed) => (
+              <CollectionCard
+                key={feed.id}
+                title={feed.name}
+                meta="saved feed"
+                covers={results.slice(0, 6)}
+                to="/"
+                onOpen={() => store.setActiveFeedId(feed.id)}
+              />
+            ))}
+          </HorizontalGridSection>
+          <HorizontalGridSection title={`Folders (${matchingFolders.length})`} to="/folders">
+            {matchingFolders.map((folder) => (
+              <CollectionCard
+                key={folder.id}
+                title={folder.name}
+                meta={folder.kind === "manual" ? `${folder.titleIds.length} titles` : "smart folder"}
+                covers={store.catalog.filter((item) => folder.titleIds.includes(item.id)).slice(0, 6)}
+                to={`/folders/${folder.id}`}
+              />
+            ))}
+          </HorizontalGridSection>
+          <HorizontalGridSection title={`Recommendation drawers (${shelfMatches.length})`} to="/recommendations">
+            {shelfMatches.map((shelf) => (
+              <CollectionCard key={shelf.id} title={shelf.name} meta="recommendation drawer" covers={results.slice(0, 6)} to="/recommendations" />
+            ))}
+          </HorizontalGridSection>
+        </>
+      ) : (
+        <p className="muted">Start typing to search titles, feeds, folders, and recommendation drawers.</p>
+      )}
+    </div>
+  );
+}
+
+function RecommendationsPage() {
+  const store = useAppStore();
+  const params = useParams();
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<number | null>(Number(params.id) || null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingShelf, setEditingShelf] = useState<RecommendationShelf | null>(null);
+  const tagsById = useMemo(() => new Map(store.tags.map((tag) => [tag.id, tag])), [store.tags]);
+  const selected =
+    store.catalog.find((item) => item.id === selectedId) ??
+    store.catalog.find((item) => item.id === Number(params.id)) ??
+    store.catalog[0];
+  const candidates = search.trim()
+    ? store.catalog
+        .filter((item) => item.display_title.toLowerCase().includes(search.trim().toLowerCase()))
+        .slice(0, 12)
+    : [];
+  const saveShelf = (shelf: RecommendationShelf) => {
+    store.updateSettings({
+      recommendationShelves: store.settings.recommendationShelves.some((item) => item.id === shelf.id)
+        ? store.settings.recommendationShelves.map((item) => (item.id === shelf.id ? shelf : item))
+        : [...store.settings.recommendationShelves, shelf],
+    });
+    setEditingShelf(null);
+    setEditorOpen(false);
+  };
+  const deleteShelf = (id: string) => {
+    store.updateSettings({ recommendationShelves: store.settings.recommendationShelves.filter((shelf) => shelf.id !== id) });
+  };
+  const saveAsFolder = (name: string, items: SeriesCatalog[]) => {
+    const now = new Date().toISOString();
+    store.upsertFolder({
+      id: crypto.randomUUID(),
+      name,
+      kind: "manual",
+      titleIds: items.slice(0, 200).map((item) => item.id),
+      createdAt: now,
+      updatedAt: now,
+    });
+  };
+  return (
+    <div className="page">
+      <div className="row">
+        <h1>Recommendations</h1>
+        <span className="spacer" />
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => {
+            setEditingShelf(null);
+            setEditorOpen(true);
+          }}
+          aria-label="Create recommendation drawer"
+        >
+          <Plus size={18} />
+        </button>
+      </div>
+      <div className="field">
+        <label htmlFor="base-title">Base title</label>
+        <input id="base-title" className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={selected?.display_title ?? "Search title"} />
+      </div>
+      {candidates.length > 0 && (
+        <HorizontalGridSection title="Pick a base title">
+          {candidates.map((series) => (
+            <button
+              className={`collection-card pick-card ${selected?.id === series.id ? "active" : ""}`}
+              type="button"
+              key={series.id}
+              onClick={() => setSelectedId(series.id)}
+            >
+              <MosaicCover items={[series]} title={series.display_title} />
+              <strong>{series.display_title}</strong>
+              <span className="muted tiny">{formatMetricValue(series, "fanFavouriteRaw")} Fan%</span>
+            </button>
+          ))}
+        </HorizontalGridSection>
+      )}
+      {selected && (
+        <section className="selected-rec-base">
+          <MosaicCover items={[selected]} title={selected.display_title} />
+          <div>
+            <span className="muted tiny">Selected</span>
+            <h2>{selected.display_title}</h2>
+            <p className="muted tiny">Recommendations prioritize shared tags, then shelf-specific sorting.</p>
+          </div>
+        </section>
+      )}
+      {selected &&
+        store.settings.recommendationShelves.map((shelf) => {
+          const items = recommendationItems(selected, shelf, store);
+          const recFeed = createFeed(shelf.name);
+          recFeed.view = store.settings.defaultFeedView;
+          return (
+            <HorizontalGridSection title={`${shelf.name} (${items.length})`} key={shelf.id}>
+              {items.slice(0, 18).map((series, index) => (
+                <TitleCard key={series.id} series={series} rank={index + 1} view={recFeed.view} tagsById={tagsById} />
+              ))}
+              <div className="drawer-actions-card">
+                <button className="button" type="button" onClick={() => saveAsFolder(shelf.name, items)}>
+                  <FolderOpen size={16} /> Save as folder
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    setEditingShelf(shelf);
+                    setEditorOpen(true);
+                  }}
+                >
+                  <SlidersHorizontal size={16} /> Edit
+                </button>
+                <button className="button danger" type="button" onClick={() => deleteShelf(shelf.id)}>
+                  <Trash2 size={16} /> Delete
+                </button>
+              </div>
+            </HorizontalGridSection>
+          );
+        })}
+      <BottomDrawer title={editingShelf ? "Edit Recommendation" : "Create Recommendation"} open={editorOpen} onOpenChange={setEditorOpen}>
+        <RecommendationShelfEditor shelf={editingShelf} onCancel={() => setEditorOpen(false)} onSave={saveShelf} />
+      </BottomDrawer>
+    </div>
+  );
+}
+
+function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, store: ReturnType<typeof useAppStore>) {
+  const baseTags = new Set(base.tag_ids);
+  const filterFeed = createFeed(shelf.name);
+  filterFeed.filters.sourceModes = shelf.sourceModes;
+  filterFeed.filters.sourceMode = shelf.sourceModes.length === 2 ? "mixed" : shelf.sourceModes[0];
+  filterFeed.filters.contentRatings = store.settings.contentRatings;
+  filterFeed.filters.metricRanges = shelf.metricRanges;
+  const pool = runFeedQuery({
+    feed: filterFeed,
+    series: store.catalog,
+    tags: store.tags,
+    history: store.history,
+    labels: store.labels,
+    settings: store.settings,
+    metaHistoryFirst: store.syncMeta?.historyFirstDate,
+    metaHistoryLast: store.syncMeta?.historyLastDate,
+  }).items.filter((item) => item.id !== base.id);
+  return pool
+    .map((item) => ({ item, tagScore: item.tag_ids.filter((id) => baseTags.has(id)).length }))
+    .filter(({ item, tagScore }) => {
+      if (tagScore === 0) return false;
+      if (shelf.statusMode === "completed" && item.status !== "completed") return false;
+      if (shelf.statusMode === "ongoing" && item.status === "completed") return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.tagScore !== b.tagScore) return b.tagScore - a.tagScore;
+      for (const rule of shelf.sort) {
+        const av = metricValue(a.item, rule.metric, store.history, store.syncMeta?.historyLastDate);
+        const bv = metricValue(b.item, rule.metric, store.history, store.syncMeta?.historyLastDate);
+        if (av === bv) continue;
+        const direction = rule.direction === "asc" ? 1 : -1;
+        return av > bv ? direction : -direction;
+      }
+      if (shelf.dateMode === "latest") {
+        return String(b.item.published?.start_date ?? "").localeCompare(String(a.item.published?.start_date ?? ""));
+      }
+      return b.item.display_title.localeCompare(a.item.display_title);
+    })
+    .map(({ item }) => item);
+}
+
+function RecommendationShelfEditor({
+  shelf,
+  onSave,
+  onCancel,
+}: {
+  shelf: RecommendationShelf | null;
+  onSave: (shelf: RecommendationShelf) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<RecommendationShelf>(
+    () =>
+      shelf ?? {
+        id: crypto.randomUUID(),
+        name: "Custom matches",
+        statusMode: "any",
+        dateMode: "any",
+        sourceModes: ["anilist", "non-anilist"],
+        sort: [{ id: crypto.randomUUID(), metric: "fanFavouriteRaw", direction: "desc" }],
+        metricRanges: [],
+      },
+  );
+  const toggleSource = (mode: "anilist" | "non-anilist") => {
+    const next = draft.sourceModes.includes(mode) ? draft.sourceModes.filter((item) => item !== mode) : [...draft.sourceModes, mode];
+    setDraft({ ...draft, sourceModes: next.length ? next : [mode] });
+  };
+  return (
+    <div>
+      <div className="field">
+        <label>Name</label>
+        <input className="input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+      </div>
+      <div className="field">
+        <label>Source</label>
+        <div className="segmented">
+          {(["anilist", "non-anilist"] as const).map((mode) => (
+            <button className={`segment ${draft.sourceModes.includes(mode) ? "active" : ""}`} type="button" key={mode} onClick={() => toggleSource(mode)}>
+              {mode === "anilist" ? "AniList" : "Non-AniList"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>Status</label>
+        <div className="segmented">
+          {(["any", "completed", "ongoing"] as const).map((mode) => (
+            <button className={`segment ${draft.statusMode === mode ? "active" : ""}`} type="button" key={mode} onClick={() => setDraft({ ...draft, statusMode: mode })}>
+              {mode}
+            </button>
+          ))}
+        </div>
+      </div>
+      <section className="section compact-section">
+        <div className="row">
+          <h2 className="section-title">Sort</h2>
+          <span className="spacer" />
+          <button
+            className="button"
+            type="button"
+            onClick={() =>
+              setDraft({
+                ...draft,
+                sort: [...draft.sort, { id: crypto.randomUUID(), metric: "fanFavouriteRaw", direction: "desc" }],
+              })
+            }
+          >
+            <Plus size={16} /> Add
+          </button>
+        </div>
+        <div className="settings-list">
+          {draft.sort.map((rule) => (
+            <div className="setting-row" key={rule.id}>
+              <div className="sort-editor">
+                <div className="metric-choice">
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      className={`metric-option ${rule.metric === option ? "active" : ""}`}
+                      type="button"
+                      key={option}
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          sort: draft.sort.map((item) => (item.id === rule.id ? { ...item, metric: option } : item)),
+                        })
+                      }
+                      title={metricDefinition(option).help}
+                    >
+                      {metricDefinition(option).shortLabel}
+                    </button>
+                  ))}
+                </div>
+                <div className="segmented compact-segments">
+                  {(["desc", "asc"] as const).map((direction) => (
+                    <button
+                      className={`segment ${rule.direction === direction ? "active" : ""}`}
+                      type="button"
+                      key={direction}
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          sort: draft.sort.map((item) => (item.id === rule.id ? { ...item, direction } : item)),
+                        })
+                      }
+                    >
+                      {direction === "desc" ? "High first" : "Low first"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setDraft({ ...draft, sort: draft.sort.filter((item) => item.id !== rule.id) })}
+                aria-label="Remove recommendation sort"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+      <MetricRangeEditor ranges={draft.metricRanges} onChange={(metricRanges) => setDraft({ ...draft, metricRanges })} />
+      <div className="toolbar">
+        <button className="button" type="button" onClick={onCancel}>Cancel</button>
+        <span className="spacer" />
+        <button className="button primary" type="button" onClick={() => onSave(draft)}>Save drawer</button>
+      </div>
     </div>
   );
 }
@@ -1108,6 +1597,9 @@ function FoldersPage() {
   const store = useAppStore();
   const [name, setName] = useState("");
   const [smartFeedId, setSmartFeedId] = useState(store.feeds[0]?.id ?? "");
+  useEffect(() => {
+    if (!smartFeedId && store.feeds[0]) setSmartFeedId(store.feeds[0].id);
+  }, [smartFeedId, store.feeds]);
   const createFolder = () => {
     if (!name.trim()) return;
     const now = new Date().toISOString();
@@ -1140,10 +1632,6 @@ function FoldersPage() {
     <div className="page">
       <div className="row">
         <h1>Folders</h1>
-        <span className="spacer" />
-        <Link className="button" to="/labels">
-          <TagsIcon /> Labels
-        </Link>
       </div>
       <section className="panel form-panel">
         <h2 className="section-title">Manual Folder</h2>
@@ -1156,45 +1644,40 @@ function FoldersPage() {
       </section>
       <section className="panel form-panel">
         <h2 className="section-title">Smart Folder From Feed</h2>
-        <div className="toolbar">
-          <select className="select" value={smartFeedId} onChange={(event) => setSmartFeedId(event.target.value)}>
+        <div className="toolbar wrap">
+          <div className="chips">
             {store.feeds.map((feed) => (
-              <option value={feed.id} key={feed.id}>
+              <button className={`chip chipbutton ${smartFeedId === feed.id ? "active" : ""}`} type="button" key={feed.id} onClick={() => setSmartFeedId(feed.id)}>
                 {feed.name}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
           <button className="button" type="button" onClick={createSmartFolder} disabled={!smartFeedId}>
             <ListPlus size={16} /> Create smart
           </button>
         </div>
       </section>
-      <div className="settings-list">
+      <div className="collection-grid">
         {store.folders.map((folder) => (
-          <div className="setting-row" key={folder.id}>
-            <div>
-              <Link to={`/folders/${folder.id}`}>
-                <strong>{folder.name}</strong>
-              </Link>
-              <div className="muted tiny">
-                {folder.kind} / {folder.kind === "manual" ? `${folder.titleIds.length} titles` : "dynamic feed results"}
-              </div>
-            </div>
-            <div className="row">
-              <Link className="button" to={`/folders/${folder.id}`}>
-                Open
-              </Link>
-              <SharePanelButton payload={{ kind: "folder", version: 1, folder }} />
-            </div>
-          </div>
+          <CollectionCard
+            key={folder.id}
+            title={folder.name}
+            meta={folder.kind === "manual" ? `${folder.titleIds.length} titles` : "smart folder"}
+            covers={store.catalog.filter((item) => folder.titleIds.includes(item.id)).slice(0, 6)}
+            to={`/folders/${folder.id}`}
+            actions={
+              <>
+                <SharePanelButton payload={{ kind: "folder", version: 1, folder }} />
+                <button className="icon-button danger" type="button" onClick={() => store.deleteFolder(folder.id)} aria-label="Delete folder">
+                  <Trash2 size={16} />
+                </button>
+              </>
+            }
+          />
         ))}
       </div>
     </div>
   );
-}
-
-function TagsIcon() {
-  return <span aria-hidden="true">#</span>;
 }
 
 function FolderDetailPage() {
@@ -1238,7 +1721,13 @@ function FolderDetailPage() {
       : {
           ...createFeed(folder.name),
           view: store.settings.defaultFeedView,
-          filters: { ...DEFAULT_FILTERS, sourceMode: "mixed" as const, contentRatings: store.settings.contentRatings },
+          filters: {
+            ...DEFAULT_FILTERS,
+            sourceMode: "mixed" as const,
+            sourceModes: ["anilist", "non-anilist"] as SourceMode[],
+            contentRatings: store.settings.contentRatings,
+            metricRanges: [],
+          },
         };
   const items =
     folder.kind === "smart"
@@ -1267,68 +1756,6 @@ function FolderDetailPage() {
         <SharePanelButton payload={{ kind: "folder", version: 1, folder }} />
       </div>
       <TitleCollection items={items} feed={feed} tags={store.tags} />
-    </div>
-  );
-}
-
-function LabelsPage() {
-  const store = useAppStore();
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(store.settings.accentColor);
-  const [minMeanScore, setMinMeanScore] = useState<number | null>(null);
-  const [minPopularity, setMinPopularity] = useState<number | null>(null);
-  const createLabel = () => {
-    if (!name.trim()) return;
-    store.upsertLabel({
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      color,
-      manualTitleIds: [],
-      rule: minMeanScore != null || minPopularity != null ? { minMeanScore, minPopularity } : null,
-    });
-    setName("");
-    setMinMeanScore(null);
-    setMinPopularity(null);
-  };
-  return (
-    <div className="page">
-      <div className="row">
-        <button className="button" type="button" onClick={() => history.back()}>
-          <ArrowLeft size={16} /> Back
-        </button>
-        <h1>Labels</h1>
-      </div>
-      <section className="panel form-panel">
-        <h2 className="section-title">Create Label</h2>
-        <div className="field-grid">
-          <div className="field">
-            <label>Label name</label>
-            <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Peak, Favorite, Try Later" />
-          </div>
-          <div className="field">
-            <label>Color</label>
-            <input className="input" type="color" value={color} onChange={(event) => setColor(event.target.value)} />
-          </div>
-          <NumberField label="Rule: min mean score" value={minMeanScore} onChange={setMinMeanScore} />
-          <NumberField label="Rule: min popularity" value={minPopularity} onChange={setMinPopularity} />
-        </div>
-        <button className="button primary" type="button" onClick={createLabel}>
-          <Plus size={16} /> Create label
-        </button>
-      </section>
-      <div className="settings-list">
-        {store.labels.map((label) => (
-          <div className="setting-row" key={label.id}>
-            <div>
-              <strong>{label.name}</strong>
-              <div className="muted tiny">{label.manualTitleIds.length} manual titles</div>
-            </div>
-            <span className="chip active" style={{ background: label.color }}>
-              Label
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1376,12 +1803,6 @@ function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection title="Safety & Content">
-        <ToggleRow
-          label="Adult/sensitive unlock"
-          description="Unlocks erotica/pornographic ratings and sensitive tag families."
-          value={store.settings.adultUnlocked}
-          onChange={(adultUnlocked) => store.updateSettings({ adultUnlocked })}
-        />
         <div className="chips">
           {(["safe", "suggestive", "erotica", "pornographic"] as ContentRating[]).map((rating) => (
             <button
@@ -1400,42 +1821,37 @@ function SettingsPage() {
             </button>
           ))}
         </div>
+        <p className="muted tiny">BL, GL, Smut, Hentai, and their children are excluded by default through the feed tag gate. Include those tags inside a feed if you want them.</p>
       </SettingsSection>
 
       <SettingsSection title="Feed Defaults">
         <div className="field-grid">
           <div className="field">
-            <label>Default view</label>
-            <select
-              className="select"
-              value={store.settings.defaultFeedView.mode}
-              onChange={(event) => store.updateSettings({ defaultFeedView: { ...store.settings.defaultFeedView, mode: event.target.value as ViewMode } })}
-            >
-              <option value="grid">Grid</option>
-              <option value="list">List</option>
-            </select>
-          </div>
-          <div className="field">
             <label>Default grid columns</label>
-            <select
-              className="select"
-              value={store.settings.defaultFeedView.gridColumns}
-              onChange={(event) =>
-                store.updateSettings({
-                  defaultFeedView: { ...store.settings.defaultFeedView, gridColumns: Number(event.target.value) as FeedViewSettings["gridColumns"] },
-                })
-              }
-            >
+            <div className="segmented compact-segments">
               {[1, 2, 3, 4, 5].map((value) => (
-                <option key={value} value={value}>
+                <button
+                  className={`segment ${store.settings.defaultFeedView.gridColumns === value ? "active" : ""}`}
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    store.updateSettings({
+                      defaultFeedView: { ...store.settings.defaultFeedView, mode: "grid", gridColumns: value as FeedViewSettings["gridColumns"] },
+                    })
+                  }
+                >
                   {value}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
           </div>
         </div>
+        <MetricSlotPicker
+          slots={store.settings.defaultFeedView.metricSlots}
+          onChange={(metricSlots) => store.updateSettings({ defaultFeedView: { ...store.settings.defaultFeedView, metricSlots } })}
+        />
         <div className="chips">
-          {(Object.keys(DEFAULT_VISIBLE_TITLE_FIELDS) as (keyof FeedViewSettings["visible"])[]).map((key) => (
+          {(Object.keys(DEFAULT_VISIBLE_TITLE_FIELDS) as (keyof FeedViewSettings["visible"])[]).filter((key) => key !== "labels").map((key) => (
             <button
               className={`chip chipbutton ${store.settings.defaultFeedView.visible[key] ? "active" : ""}`}
               type="button"
@@ -1450,7 +1866,7 @@ function SettingsPage() {
 
       <SettingsSection title="Detail Page Defaults">
         <div className="chips">
-          {(Object.keys(store.settings.detailVisible) as (keyof AppSettings["detailVisible"])[]).map((key) => (
+          {(Object.keys(store.settings.detailVisible) as (keyof AppSettings["detailVisible"])[]).filter((key) => key !== "labels").map((key) => (
             <button className={`chip chipbutton ${store.settings.detailVisible[key] ? "active" : ""}`} type="button" key={key} onClick={() => updateDetail(key)}>
               {key}
             </button>
@@ -1461,16 +1877,30 @@ function SettingsPage() {
       <SettingsSection title="Navigation & Controls">
         <div className="field">
           <label>Feed controls placement</label>
-          <select className="select" value={store.settings.controlPlacement} onChange={(event) => store.updateSettings({ controlPlacement: event.target.value as AppSettings["controlPlacement"] })}>
-            <option value="drawer">Bottom drawer only</option>
-            <option value="toolbar">Top toolbar + drawer</option>
-            <option value="fab">Floating action button + drawer</option>
-          </select>
+          <div className="segmented">
+            {([
+              ["drawer", "Drawer"],
+              ["toolbar", "Toolbar"],
+              ["fab", "Floating"],
+            ] as const).map(([value, label]) => (
+              <button
+                className={`segment ${store.settings.controlPlacement === value ? "active" : ""}`}
+                type="button"
+                key={value}
+                onClick={() => store.updateSettings({ controlPlacement: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <ToggleRow label="Restore last session" description="Reopen at the prior route/feed/scroll when possible." value={store.settings.restoreLastSession} onChange={(restoreLastSession) => store.updateSettings({ restoreLastSession })} />
       </SettingsSection>
 
       <SettingsSection title="Sharing & Backup">
+        <Link className="button" to="/learn">
+          <Info size={16} /> Learn metrics and data
+        </Link>
         <SharePanelButton payload={{ kind: "settings", version: 1, settings: store.settings }} label="Share settings" />
         <button
           className="button"
@@ -1530,6 +1960,7 @@ function TitleDetailPage() {
   const catalogItem = store.catalog.find((item) => item.id === id);
   const [detail, setDetail] = useState<SeriesDetail | null>(null);
   const [status, setStatus] = useState("Loading detail");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const tagsById = useMemo(() => new Map(store.tags.map((tag) => [tag.id, tag])), [store.tags]);
 
   useEffect(() => {
@@ -1545,7 +1976,19 @@ function TitleDetailPage() {
     };
   }, [id, store.settings.dataSourceUrl]);
 
-  const series = detail ?? catalogItem;
+  const series = detail && catalogItem
+    ? {
+        ...detail,
+        stats: catalogItem.stats,
+        analytics: catalogItem.analytics,
+        source: catalogItem.source ?? detail.source,
+        published: catalogItem.published ?? detail.published,
+        last_updated_at: catalogItem.last_updated_at ?? detail.last_updated_at,
+        authors: catalogItem.authors?.length ? catalogItem.authors : detail.authors,
+        artists: catalogItem.artists?.length ? catalogItem.artists : detail.artists,
+        links: { ...(detail.links ?? {}), ...(catalogItem.links ?? {}) },
+      }
+    : detail ?? catalogItem;
   const visible = store.settings.detailVisible;
   if (!series) {
     return (
@@ -1559,40 +2002,43 @@ function TitleDetailPage() {
   }
 
   return (
-    <div className="page">
-      <button className="button" type="button" onClick={() => navigate(-1)}>
-        <ArrowLeft size={16} /> Back
-      </button>
-      <section className="detail-hero">
+    <div className="detail-page">
+      {series.cover && <img className="detail-bg" src={series.cover} alt="" />}
+      <div className="detail-top-actions">
+        <button className="icon-button glass" type="button" onClick={() => navigate(-1)} aria-label="Back">
+          <ArrowLeft size={22} />
+        </button>
+        <span className="spacer" />
+        <TitleActions series={series} compact />
+        <Link className="icon-button glass" to={`/recommendations/${series.id}`} aria-label="Recommendations">
+          <Sparkles size={20} />
+        </Link>
+        <button className="icon-button glass" type="button" onClick={() => setSettingsOpen(true)} aria-label="Detail settings">
+          <EllipsisVertical size={20} />
+        </button>
+      </div>
+      <section className="detail-hero komikku-detail">
         {visible.cover && (series.cover ? <img className="detail-cover" src={series.cover} alt="" /> : <div className="detail-cover cover-fallback">No cover</div>)}
-        <div>
+        <div className="detail-main-copy">
           {visible.title && <h1 className="detail-title">{series.display_title}</h1>}
+          <div className="detail-meta-lines">
+            {visible.authorsArtists && <span>{[...(series.authors ?? []), ...(series.artists ?? [])].filter(Boolean).slice(0, 2).join(" / ")}</span>}
+            {visible.status && series.status && <span>{series.status}</span>}
+            {visible.year && series.year && <span>{series.year}</span>}
+          </div>
+          <div className="big-stat-grid">
+            {(["fanFavouriteRaw", "popularity", "favourites"] as MetricId[]).map((metric) => (
+              <div className="big-stat" key={metric}>
+                <span>{metricDefinition(metric).shortLabel}</span>
+                <strong>{formatMetricValue(series, metric)}</strong>
+              </div>
+            ))}
+          </div>
           {visible.genreTags && <GenreChips series={series} tagsById={tagsById} />}
-          <div className="metrics" style={{ marginTop: 12 }}>
-            {visible.popularity && <span>Popularity: {metricText(series, "popularity")}</span>}
-            {visible.favourites && <span>Favourites: {metricText(series, "favourites")}</span>}
-            {visible.meanScore && <span>Mean Score: {metricText(series, "meanScore")}</span>}
-            {visible.fanFavouriteRatio && <span>Ratio: {metricText(series, "fanFavouriteRaw")}</span>}
-            {visible.discoveryMetrics && <span>Discovery: {metricText(series, "fanFavouriteDiscoveryScore")}</span>}
-            {visible.status && series.status && <span>Status: {series.status}</span>}
-            {visible.year && series.year && <span>Year: {series.year}</span>}
-            {visible.chapters && series.total_chapters && <span>Chapters: {series.total_chapters}</span>}
-            {visible.contentRating && series.content_rating && <span>Rating: {series.content_rating}</span>}
-          </div>
-          <div className="toolbar">
-            {detail?.links?.mangabaka && (
-              <a className="button" href={detail.links.mangabaka} target="_blank" rel="noreferrer">
-                MangaBaka
-              </a>
-            )}
-            {detail?.source?.anilist?.url && (
-              <a className="button" href={detail.source.anilist.url} target="_blank" rel="noreferrer">
-                AniList
-              </a>
-            )}
-          </div>
-          <TitleActions series={series} />
         </div>
+      </section>
+      <section className="detail-block detail-links">
+        <DetailLinks series={series} />
       </section>
       {visible.description && detail?.description && (
         <section className="detail-block">
@@ -1623,22 +2069,40 @@ function TitleDetailPage() {
           </div>
         </section>
       )}
+      <BottomDrawer title="Detail Settings" open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DetailSettingsDrawer />
+      </BottomDrawer>
     </div>
   );
 }
 
-function TitleActions({ series }: { series: SeriesCatalog }) {
+function DetailLinks({ series }: { series: SeriesCatalog }) {
+  const links = [
+    ["MangaBaka", series.links?.mangabaka],
+    ["AniList", series.source?.anilist?.url],
+    ["MangaUpdates", series.source?.mangaupdates?.url],
+    ["Anime-Planet", series.source?.animeplanet?.url],
+    ["Read EN", series.links?.read_en],
+  ].filter(([, href]) => Boolean(href)) as [string, string][];
+  if (links.length === 0) return null;
+  return (
+    <div className="chips link-chips">
+      {links.map(([label, href]) => (
+        <a className="chip link-chip" href={href} target="_blank" rel="noreferrer" key={label}>
+          {label} <ExternalLink size={13} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function TitleActions({ series, compact = false }: { series: SeriesCatalog; compact?: boolean }) {
   const store = useAppStore();
   const [folderId, setFolderId] = useState(store.folders[0]?.id ?? "");
-  const [labelId, setLabelId] = useState(store.labels[0]?.id ?? "");
   const manualFolders = store.folders.filter((folder) => folder.kind === "manual");
-  const attachedLabels = store.labels.filter((label) => labelMatchesSeries(label, series));
   useEffect(() => {
     if (!folderId && manualFolders[0]) setFolderId(manualFolders[0].id);
   }, [folderId, manualFolders]);
-  useEffect(() => {
-    if (!labelId && store.labels[0]) setLabelId(store.labels[0].id);
-  }, [labelId, store.labels]);
   const addToFolder = () => {
     const folder = manualFolders.find((item) => item.id === folderId);
     if (!folder) return;
@@ -1648,73 +2112,64 @@ function TitleActions({ series }: { series: SeriesCatalog }) {
       updatedAt: new Date().toISOString(),
     });
   };
-  const addLabel = () => {
-    const label = store.labels.find((item) => item.id === labelId);
-    if (!label) return;
-    store.upsertLabel({
-      ...label,
-      manualTitleIds: label.manualTitleIds.includes(series.id) ? label.manualTitleIds : [...label.manualTitleIds, series.id],
-    });
-  };
-  const removeLabel = (label: UserLabel) => {
-    store.upsertLabel({
-      ...label,
-      manualTitleIds: label.manualTitleIds.filter((id) => id !== series.id),
-    });
-  };
+  if (compact) {
+    return (
+      <button className="icon-button glass" type="button" onClick={addToFolder} disabled={!folderId} aria-label="Add to folder">
+        <Plus size={20} />
+      </button>
+    );
+  }
   return (
     <section className="detail-actions">
       <h2 className="section-title">Library Actions</h2>
       <div className="field-grid">
         <div className="field">
           <label>Add to manual folder</label>
-          <div className="row">
-            <select className="select" value={folderId} onChange={(event) => setFolderId(event.target.value)}>
-              <option value="">Choose folder</option>
+          <div className="row wrap">
+            <div className="chips">
+              {manualFolders.length === 0 && <span className="muted tiny">Create a manual folder first.</span>}
               {manualFolders.map((folder) => (
-                <option value={folder.id} key={folder.id}>
+                <button className={`chip chipbutton ${folderId === folder.id ? "active" : ""}`} type="button" key={folder.id} onClick={() => setFolderId(folder.id)}>
                   {folder.name}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
             <button className="button" type="button" onClick={addToFolder} disabled={!folderId}>
               Add
             </button>
           </div>
         </div>
-        <div className="field">
-          <label>Apply label</label>
-          <div className="row">
-            <select className="select" value={labelId} onChange={(event) => setLabelId(event.target.value)}>
-              <option value="">Choose label</option>
-              {store.labels.map((label) => (
-                <option value={label.id} key={label.id}>
-                  {label.name}
-                </option>
-              ))}
-            </select>
-            <button className="button" type="button" onClick={addLabel} disabled={!labelId}>
-              Apply
-            </button>
-          </div>
-        </div>
       </div>
-      {attachedLabels.length > 0 && (
-        <div className="chips">
-          {attachedLabels.map((label) => (
-            label.manualTitleIds.includes(series.id) ? (
-              <button className="chip chipbutton active" type="button" key={label.id} onClick={() => removeLabel(label)}>
-                {label.name} x
-              </button>
-            ) : (
-              <span className="chip active" key={label.id}>
-                {label.name} auto
-              </span>
-            )
+    </section>
+  );
+}
+
+function DetailSettingsDrawer() {
+  const store = useAppStore();
+  const updateDetail = (key: keyof AppSettings["detailVisible"]) =>
+    store.updateSettings({ detailVisible: { ...store.settings.detailVisible, [key]: !store.settings.detailVisible[key] } });
+  return (
+    <div>
+      <p className="muted">These detail toggles become the default detail layout for every title.</p>
+      <div className="chips">
+        {(Object.keys(store.settings.detailVisible) as (keyof AppSettings["detailVisible"])[]).filter((key) => key !== "labels").map((key) => (
+          <button className={`chip chipbutton ${store.settings.detailVisible[key] ? "active" : ""}`} type="button" key={key} onClick={() => updateDetail(key)}>
+            {key}
+          </button>
+        ))}
+      </div>
+      <div className="learn-item">
+        <h2 className="section-title">Stats</h2>
+        <div className="settings-list">
+          {METRIC_DEFINITIONS.filter((metric) => metric.id !== "title").map((metric) => (
+            <div className="setting-row" key={metric.id}>
+              <strong>{metric.shortLabel} - {metric.label}</strong>
+              <span className="muted tiny">{metric.help}</span>
+            </div>
           ))}
         </div>
-      )}
-    </section>
+      </div>
+    </div>
   );
 }
 
@@ -1732,16 +2187,20 @@ function LearnPage() {
           through common filters such as text, tags, year, chapters, status, and folders.
         </LearnItem>
         <LearnItem title="Discovery Metrics">
-          Fan-favourite ratio is favourites divided by popularity. Discovery score combines fandom attachment and popularity confidence
-          so niche titles do not unfairly dominate.
+          Fan% is favourites divided by popularity. Discovery score combines fandom attachment and popularity confidence so niche titles do not unfairly dominate.
+        </LearnItem>
+        <LearnItem title="Cover Stats">
+          Cover stat slots show at most three metrics. Fan% is the default rank signal, with Pop and Fav beside it for context.
         </LearnItem>
         <LearnItem title="Safe Defaults">
-          Safe and suggestive content are enabled by default. Erotica, pornographic ratings, and sensitive tag families are hidden until
-          unlocked in Settings.
+          Safe and suggestive content are enabled by default. BL, GL, Smut, Hentai, and their child tags are excluded unless a feed explicitly includes those tags.
         </LearnItem>
         <LearnItem title="Offline And Sharing">
-          Catalog, tags, history, feeds, folders, labels, settings, and opened details are cached locally. Share links contain compressed
+          Catalog, tags, history, feeds, folders, settings, and opened details are cached locally. Share links contain compressed
           config data and open an import preview before changing anything.
+        </LearnItem>
+        <LearnItem title="Live Data Sync">
+          The app now merges live backend catalog stats with query-only enriched fields so cover stats and detail stats use the current backend values.
         </LearnItem>
         <LearnItem title="Data Limits">
           Long growth windows become more useful as backend history accumulates. Until then, the app runs against available history and
@@ -1794,16 +2253,18 @@ function ImportPage() {
         <div className="empty-state">
           <Import size={28} />
           <strong>{payload.kind} share</strong>
-          <span className="muted">Review before applying. Merge keeps existing local data; replace is for settings/full backups.</span>
+          <span className="muted">Review before adding. Shared feeds and folders are added as new local items.</span>
           <div className="toolbar">
             <button className="button primary" type="button" onClick={() => apply("merge")}>
-              Merge
+              Add
             </button>
-            <button className="button" type="button" onClick={() => apply("replace")}>
-              Replace
-            </button>
+            {(payload.kind === "settings" || payload.kind === "full") && (
+              <button className="button" type="button" onClick={() => apply("replace")}>
+                Replace settings/full backup
+              </button>
+            )}
             <button className="button" type="button" onClick={() => navigate("/")}>
-              Cancel
+              Do not add
             </button>
           </div>
         </div>

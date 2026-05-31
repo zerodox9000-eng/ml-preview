@@ -4,6 +4,7 @@ import type {
   Feed,
   FeedFilters,
   FeedViewSettings,
+  RecommendationShelf,
   SortRule,
   VisibleTitleFields,
 } from "./types";
@@ -33,7 +34,7 @@ export const DEFAULT_VISIBLE_TITLE_FIELDS: VisibleTitleFields = {
   fanFavouriteRatio: false,
   discoveryScore: false,
   growthDelta: false,
-  labels: true,
+  labels: false,
   sourceBadges: false,
   quickActions: false,
   description: false,
@@ -46,6 +47,7 @@ export const DEFAULT_FEED_VIEW: FeedViewSettings = {
   gridDensity: "standard",
   listCoverSize: "medium",
   listDensity: "standard",
+  metricSlots: ["fanFavouriteRaw", "popularity", "favourites"],
   visible: DEFAULT_VISIBLE_TITLE_FIELDS,
 };
 
@@ -57,7 +59,7 @@ export const DEFAULT_DETAIL_VISIBLE: DetailVisibleFields = {
   allTags: false,
   authorsArtists: false,
   links: true,
-  labels: true,
+  labels: false,
   popularity: true,
   favourites: true,
   meanScore: false,
@@ -71,7 +73,8 @@ export const DEFAULT_DETAIL_VISIBLE: DetailVisibleFields = {
 };
 
 export const DEFAULT_FILTERS: FeedFilters = {
-  sourceMode: "anilist",
+  sourceMode: "mixed",
+  sourceModes: ["anilist", "non-anilist"],
   query: "",
   includeTagIds: [],
   excludeTagIds: [],
@@ -88,6 +91,7 @@ export const DEFAULT_FILTERS: FeedFilters = {
   maxFavourites: null,
   minMeanScore: null,
   maxMeanScore: null,
+  metricRanges: [],
   dateField: "none",
   rolling: {
     mode: "none",
@@ -98,31 +102,63 @@ export const DEFAULT_FILTERS: FeedFilters = {
 };
 
 export const DEFAULT_SORT: SortRule[] = [
+  { id: "sort-fan", metric: "fanFavouriteRaw", direction: "desc" },
   { id: "sort-popularity", metric: "popularity", direction: "desc" },
   { id: "sort-title", metric: "title", direction: "asc" },
 ];
 
+export const DEFAULT_RECOMMENDATION_SHELVES: RecommendationShelf[] = [
+  {
+    id: "similar-loved",
+    name: "Most similar and loved",
+    statusMode: "any",
+    dateMode: "any",
+    sourceModes: ["anilist", "non-anilist"],
+    sort: [{ id: "rec-fan", metric: "fanFavouriteRaw", direction: "desc" }],
+    metricRanges: [],
+  },
+  {
+    id: "latest-similar",
+    name: "Latest similar releases",
+    statusMode: "any",
+    dateMode: "latest",
+    sourceModes: ["anilist", "non-anilist"],
+    sort: [{ id: "rec-release", metric: "releaseDate", direction: "desc" }],
+    metricRanges: [],
+  },
+  {
+    id: "completed-similar",
+    name: "Completed similar",
+    statusMode: "completed",
+    dateMode: "any",
+    sourceModes: ["anilist", "non-anilist"],
+    sort: [{ id: "rec-complete-fan", metric: "fanFavouriteRaw", direction: "desc" }],
+    metricRanges: [],
+  },
+];
+
 export const DEFAULT_SETTINGS: AppSettings = {
-  appName: "Manhwa Library",
+  appName: "Manhwa Lib",
   themeMode: "dark",
   accentColor: "#ff006e",
   dataSourceUrl: RAW_EXPORT_BASE,
   adultUnlocked: false,
   contentRatings: ["safe", "suggestive"],
   defaultFeedView: DEFAULT_FEED_VIEW,
+  recommendationShelves: DEFAULT_RECOMMENDATION_SHELVES,
   detailVisible: DEFAULT_DETAIL_VISIBLE,
   detailCoverLayout: "left",
   metricNames: {
     popularity: "Popularity",
     favourites: "Favourites",
     meanScore: "Mean Score",
-    fanFavouriteRaw: "Fan Favourite Ratio",
+    fanFavouriteRaw: "Fan Favourite Percent",
     fanFavouriteDiscoveryScore: "Discovery Score",
     fanFavouriteDiscoveryPercentile: "Discovery Percentile",
     popularityGrowth: "Popularity Growth",
     favouritesGrowth: "Favourites Growth",
   },
-  bottomNavItems: ["home", "feeds", "search", "folders", "settings"],
+  bottomNavItems: ["home", "feeds", "search", "recommendations", "folders", "settings"],
   controlPlacement: "toolbar",
   restoreLastSession: true,
   nonAniListPlacement: "bottom",
@@ -138,10 +174,16 @@ export function createFeed(name = "New Feed"): Feed {
     name,
     createdAt: now,
     updatedAt: now,
-    filters: { ...DEFAULT_FILTERS, contentRatings: [...DEFAULT_FILTERS.contentRatings] },
+    filters: {
+      ...DEFAULT_FILTERS,
+      sourceModes: [...(DEFAULT_FILTERS.sourceModes ?? [])],
+      contentRatings: [...DEFAULT_FILTERS.contentRatings],
+      metricRanges: [],
+    },
     sort: DEFAULT_SORT.map((rule) => ({ ...rule, id: crypto.randomUUID() })),
     view: {
       ...DEFAULT_FEED_VIEW,
+      metricSlots: [...DEFAULT_FEED_VIEW.metricSlots],
       visible: { ...DEFAULT_FEED_VIEW.visible },
     },
     coverTitleIds: [],

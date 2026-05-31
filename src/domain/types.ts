@@ -86,29 +86,38 @@ export type HistoryMap = Record<string, HistoryEntry[]>;
 
 export interface SortRule {
   id: string;
-  metric:
-    | "title"
-    | "year"
-    | "chapters"
-    | "popularity"
-    | "favourites"
-    | "meanScore"
-    | "fanFavouriteRaw"
-    | "fanRatioPercentile"
-    | "popularityPercentile"
-    | "fanFavouriteDiscoveryScore"
-    | "fanFavouriteDiscoveryPercentile"
-    | "releaseDate"
-    | "endDate"
-    | "popularityGrowth"
-    | "popularityGrowthPercent"
-    | "favouritesGrowth"
-    | "favouritesGrowthPercent"
-    | "meanScoreDelta"
-    | "fanFavouriteDelta"
-    | "discoveryScoreDelta"
-    | "discoveryPercentileDelta";
+  metric: MetricId;
   direction: "asc" | "desc";
+}
+
+export type MetricId =
+  | "title"
+  | "year"
+  | "chapters"
+  | "popularity"
+  | "favourites"
+  | "meanScore"
+  | "fanFavouriteRaw"
+  | "fanRatioPercentile"
+  | "popularityPercentile"
+  | "fanFavouriteDiscoveryScore"
+  | "fanFavouriteDiscoveryPercentile"
+  | "releaseDate"
+  | "endDate"
+  | "popularityGrowth"
+  | "popularityGrowthPercent"
+  | "favouritesGrowth"
+  | "favouritesGrowthPercent"
+  | "meanScoreDelta"
+  | "fanFavouriteDelta"
+  | "discoveryScoreDelta"
+  | "discoveryPercentileDelta";
+
+export interface MetricRange {
+  id: string;
+  metric: MetricId;
+  min: number | null;
+  max: number | null;
 }
 
 export interface RollingWindow {
@@ -121,6 +130,7 @@ export interface RollingWindow {
 
 export interface FeedFilters {
   sourceMode: SourceMode;
+  sourceModes?: SourceMode[];
   query: string;
   includeTagIds: number[];
   excludeTagIds: number[];
@@ -137,6 +147,7 @@ export interface FeedFilters {
   maxFavourites: number | null;
   minMeanScore: number | null;
   maxMeanScore: number | null;
+  metricRanges: MetricRange[];
   dateField: "none" | "release" | "end";
   rolling: RollingWindow;
   labelIds: string[];
@@ -170,6 +181,7 @@ export interface FeedViewSettings {
   gridDensity: GridDensity;
   listCoverSize: ListCoverSize;
   listDensity: ListDensity;
+  metricSlots: MetricId[];
   visible: VisibleTitleFields;
 }
 
@@ -192,6 +204,16 @@ export interface Folder {
   feedId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RecommendationShelf {
+  id: string;
+  name: string;
+  statusMode: "any" | "completed" | "ongoing";
+  dateMode: "any" | "latest";
+  sourceModes: SourceMode[];
+  sort: SortRule[];
+  metricRanges: MetricRange[];
 }
 
 export interface LabelRule {
@@ -238,6 +260,7 @@ export interface AppSettings {
   adultUnlocked: boolean;
   contentRatings: ContentRating[];
   defaultFeedView: FeedViewSettings;
+  recommendationShelves: RecommendationShelf[];
   detailVisible: DetailVisibleFields;
   detailCoverLayout: "left" | "right" | "center" | "background" | "minimal";
   metricNames: Record<string, string>;

@@ -7,6 +7,7 @@ const tags: TagNode[] = [
   { id: 1, name: "Action", path: "Genres > Action", is_genre: true, parent_id: null, level: 1 },
   { id: 2, name: "Hentai", path: "Sexual Content > Intensity > Hentai", is_genre: true, parent_id: null, level: 2 },
   { id: 3, name: "Fantasy", path: "Themes > Fantasy", is_genre: true, parent_id: null, level: 2 },
+  { id: 4, name: "Isekai", path: "Themes > Fantasy > Isekai", is_genre: false, parent_id: 3, level: 3 },
 ];
 
 const baseSeries: SeriesCatalog[] = [
@@ -66,6 +67,7 @@ describe("runFeedQuery", () => {
   it("hides sensitive tags unless adult content is unlocked", () => {
     const feed = createFeed("safe");
     feed.filters.sourceMode = "mixed";
+    feed.filters.sourceModes = ["anilist", "non-anilist"];
     const result = runFeedQuery({
       feed,
       series: baseSeries,
@@ -82,6 +84,7 @@ describe("runFeedQuery", () => {
   it("segments non-AniList titles by source mode", () => {
     const feed = createFeed("non anilist");
     feed.filters.sourceMode = "non-anilist";
+    feed.filters.sourceModes = ["non-anilist"];
     const result = runFeedQuery({
       feed,
       series: baseSeries,
@@ -98,6 +101,7 @@ describe("runFeedQuery", () => {
   it("sorts by rolling growth inside available history", () => {
     const feed = createFeed("growth");
     feed.filters.sourceMode = "anilist";
+    feed.filters.sourceModes = ["anilist"];
     feed.filters.rolling = { mode: "fixed", amount: 1, unit: "days", from: "2024-05-01", to: "2024-05-10" };
     feed.sort = [{ id: "growth", metric: "popularityGrowth", direction: "desc" }];
     const result = runFeedQuery({
@@ -116,6 +120,8 @@ describe("runFeedQuery", () => {
   it("sorts by release date when query index dates are present", () => {
     const feed = createFeed("release");
     feed.filters.sourceMode = "mixed";
+    feed.filters.sourceModes = ["anilist", "non-anilist"];
+    feed.filters.includeTagIds = [1, 2];
     feed.sort = [{ id: "release", metric: "releaseDate", direction: "desc" }];
     const result = runFeedQuery({
       feed,
@@ -128,5 +134,25 @@ describe("runFeedQuery", () => {
       metaHistoryLast: "2024-05-10",
     });
     expect(result.items.map((item) => item.id)).toEqual([3, 2, 1]);
+  });
+
+  it("matches child tags when a parent tag is selected", () => {
+    const feed = createFeed("hierarchy");
+    feed.filters.sourceModes = ["anilist", "non-anilist"];
+    feed.filters.includeTagIds = [3];
+    const result = runFeedQuery({
+      feed,
+      series: [
+        { ...baseSeries[0], id: 10, display_title: "Child tagged", tag_ids: [4] },
+        { ...baseSeries[0], id: 11, display_title: "Other tagged", tag_ids: [1] },
+      ],
+      tags,
+      history,
+      labels: [],
+      settings: DEFAULT_SETTINGS,
+      metaHistoryFirst: "2024-05-01",
+      metaHistoryLast: "2024-05-10",
+    });
+    expect(result.items.map((item) => item.id)).toEqual([10]);
   });
 });
