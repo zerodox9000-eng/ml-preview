@@ -77,13 +77,21 @@ function mergeLiveCatalog(liveCatalog: SeriesCatalog[], enrichedCatalog: SeriesC
     const enriched = enrichedById.get(live.id);
     const fixedLive = fixMangaBakaLink(live);
     if (!enriched) return fixedLive;
+    const livePublished = fixedLive.published;
+    const enrichedPublished = enriched.published
+      ? {
+          ...enriched.published,
+          start_date_is_estimated: Boolean(enriched.published.start_date),
+          end_date_is_estimated: Boolean(enriched.published.end_date),
+        }
+      : undefined;
     return fixMangaBakaLink({
       ...enriched,
       ...fixedLive,
       stats: fixedLive.stats ?? enriched.stats,
       analytics: fixedLive.analytics ?? enriched.analytics,
       source: fixedLive.source ?? enriched.source,
-      published: fixedLive.published ?? enriched.published,
+      published: livePublished?.start_date || livePublished?.end_date ? livePublished : enrichedPublished,
       last_updated_at: fixedLive.last_updated_at ?? enriched.last_updated_at,
       authors: fixedLive.authors?.length ? fixedLive.authors : enriched.authors,
       artists: fixedLive.artists?.length ? fixedLive.artists : enriched.artists,
@@ -236,7 +244,17 @@ export async function loadBundledCatalog() {
     "data/query-index.json.gz"
   );
   if (!catalog?.length) return [];
-  return normalizeCatalog(catalog, {}).catalog;
+  const estimatedCatalog = catalog.map((item) => ({
+    ...item,
+    published: item.published
+      ? {
+          ...item.published,
+          start_date_is_estimated: Boolean(item.published.start_date),
+          end_date_is_estimated: Boolean(item.published.end_date),
+        }
+      : item.published,
+  }));
+  return normalizeCatalog(estimatedCatalog, {}).catalog;
 }
 
 export async function fetchSeriesDetail(source: string, id: number) {

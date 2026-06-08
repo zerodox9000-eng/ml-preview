@@ -111,21 +111,15 @@ export const DEFAULT_SORT: SortRule[] = [
 export const DEFAULT_RECOMMENDATION_SHELVES: RecommendationShelf[] = [
   {
     id: "similar-loved",
-    name: "Most similar and loved",
+    name: "Most loved matches",
     statusMode: "any",
     dateMode: "any",
     sourceModes: ["anilist", "non-anilist"],
     sort: [{ id: "rec-fan", metric: "fanFavouriteRaw", direction: "desc" }],
-    metricRanges: [],
-  },
-  {
-    id: "completed-most-loved",
-    name: "Completed most loved",
-    statusMode: "completed",
-    dateMode: "any",
-    sourceModes: ["anilist", "non-anilist"],
-    sort: [{ id: "rec-complete-loved", metric: "fanFavouriteRaw", direction: "desc" }],
-    metricRanges: [],
+    metricRanges: [
+      { id: "rec-min-pop", metric: "popularity", min: 500, max: null },
+      { id: "rec-min-fan", metric: "fanFavouriteRaw", min: 2, max: null },
+    ],
   },
 ];
 
@@ -158,6 +152,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sfwShareDefault: true,
   includeAppNameInShare: true,
   searchSensitiveTags: false,
+  searchRelationshipTags: false,
+  searchAdultTags: false,
 };
 
 export function createFeed(name = "New Feed"): Feed {

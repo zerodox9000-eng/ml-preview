@@ -154,10 +154,12 @@ export function normalizeCatalog(
       merged.added_at?.slice(0, 10) ??
       null;
     const published = { ...(merged.published ?? {}) };
-    if (!published.start_date || published.start_date_is_estimated) {
-      published.start_date = firstSeen ?? published.start_date ?? null;
+    const hasActualStartDate = Boolean(published.start_date && !published.start_date_is_estimated);
+    if (!hasActualStartDate) {
+      published.start_date = firstSeen ?? null;
       published.start_date_is_estimated = Boolean(firstSeen);
     }
+    if (published.end_date_is_estimated) published.end_date = null;
     const canonical = {
       ...merged,
       merged_ids: ids,

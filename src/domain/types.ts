@@ -278,6 +278,8 @@ export interface AppSettings {
   sfwShareDefault: boolean;
   includeAppNameInShare: boolean;
   searchSensitiveTags: boolean;
+  searchRelationshipTags: boolean;
+  searchAdultTags: boolean;
 }
 
 export interface SyncMeta {

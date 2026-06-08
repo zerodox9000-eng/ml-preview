@@ -38,7 +38,7 @@ import {
 } from "react-router-dom";
 import { createFeed, DEFAULT_DETAIL_VISIBLE, DEFAULT_FILTERS, DEFAULT_SORT } from "./domain/defaults";
 import { isFutureDate } from "./domain/dates";
-import { buildSensitiveTagSet, isGenreTag, runFeedQuery, tagRoot } from "./domain/query";
+import { buildSensitiveTagGroups, isGenreTag, runFeedQuery, tagRoot } from "./domain/query";
 import { formatMetricValue, METRIC_DEFINITIONS, metricDefinition, metricValue } from "./domain/metrics";
 import { decodeSharePayload, exportCsv, makeShareUrl, type SharePayload } from "./domain/share";
 import type {
@@ -331,6 +331,10 @@ function HomePage() {
 
 function FeedTabs() {
   const store = useAppStore();
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [store.activeFeedId, store.feeds.length]);
   if (store.feeds.length === 0) return null;
   return (
     <div className="feed-tabs" aria-label="Feed tabs">
@@ -338,6 +342,7 @@ function FeedTabs() {
         <button
           type="button"
           key={feed.id}
+          ref={store.activeFeedId === feed.id ? activeRef : null}
           className={`feed-tab ${store.activeFeedId === feed.id ? "active" : ""}`}
           onClick={() => store.setActiveFeedId(feed.id)}
         >
@@ -383,12 +388,7 @@ function FeedView({ feed }: { feed: Feed }) {
   return (
     <>
       <section className="section">
-        <div className="row feed-view-header">
-          <div className="feed-view-title">
-            <h1 className="single-line-title">{feed.name}</h1>
-            {feed.showDescription && feed.description && <p className="feed-description">{feed.description}</p>}
-          </div>
-          <span className="spacer" />
+        <div className="feed-action-row">
           <button className="icon-button" type="button" onClick={() => setMenuOpen((open) => !open)} aria-label="Feed menu">
             <EllipsisVertical size={20} />
           </button>
@@ -400,6 +400,12 @@ function FeedView({ feed }: { feed: Feed }) {
               <button type="button" onClick={() => { setInfoOpen(true); setMenuOpen(false); }}><Info size={17} /> Info</button>
             </div>
           )}
+        </div>
+        <div className="feed-view-header">
+          <div className="feed-view-title">
+            <h1 className="single-line-title">{feed.name}</h1>
+            {feed.showDescription && feed.description && <p className="feed-description">{feed.description}</p>}
+          </div>
         </div>
         {searchOpen && (
           <div className="field feed-search">
@@ -1285,7 +1291,7 @@ function SearchPage() {
     feed.view = { ...feed.view, gridColumns: 3 };
     return feed;
   }, []);
-  const sensitiveTagIds = useMemo(() => buildSensitiveTagSet(store.tags), [store.tags]);
+  const sensitiveTagGroups = useMemo(() => buildSensitiveTagGroups(store.tags), [store.tags]);
   const results = useMemo(
     () =>
       query.trim()
@@ -1293,12 +1299,13 @@ function SearchPage() {
             .filter((item) => {
               if (!item.display_title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return false;
               if (!["safe", "suggestive"].includes(String(item.content_rating ?? ""))) return false;
-              if (!store.settings.searchSensitiveTags && item.tag_ids.some((id) => sensitiveTagIds.has(id))) return false;
+              if (!store.settings.searchRelationshipTags && item.tag_ids.some((id) => sensitiveTagGroups.relationship.has(id))) return false;
+              if (!store.settings.searchAdultTags && item.tag_ids.some((id) => sensitiveTagGroups.adult.has(id))) return false;
               return true;
             })
             .sort((a, b) => a.display_title.localeCompare(b.display_title))
         : [],
-    [query, sensitiveTagIds, store.catalog, store.settings.searchSensitiveTags],
+    [query, sensitiveTagGroups, store.catalog, store.settings.searchAdultTags, store.settings.searchRelationshipTags],
   );
   useEffect(() => {
     sessionStorage.setItem("manhwa-search-query", query);
@@ -1361,9 +1368,11 @@ function RecommendationsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(Number(params.id) || null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingShelf, setEditingShelf] = useState<RecommendationShelf | null>(null);
+  const defaultRecommendationTitle = store.catalog.find((item) => item.display_title.toLocaleLowerCase() === "bastard");
   const selected =
     store.catalog.find((item) => item.id === selectedId) ??
     store.catalog.find((item) => item.id === Number(params.id)) ??
+    defaultRecommendationTitle ??
     store.catalog[0];
   const candidates = search.trim()
     ? store.catalog
@@ -1693,10 +1702,16 @@ function SettingsPage() {
 
       <SettingsSection title="Search">
         <ToggleRow
-          label="Show sensitive tag families"
-          description="Global title search includes BL, GL, Smut, Hentai, and child tags only when this is on."
-          value={store.settings.searchSensitiveTags}
-          onChange={(searchSensitiveTags) => store.updateSettings({ searchSensitiveTags })}
+          label="Show BL / GL families"
+          description="Global title search includes Boys Love, Girls Love, Yaoi, Yuri, and child tags only when this is on."
+          value={store.settings.searchRelationshipTags}
+          onChange={(searchRelationshipTags) => store.updateSettings({ searchRelationshipTags })}
+        />
+        <ToggleRow
+          label="Show Smut / Hentai"
+          description="Global title search includes Smut, Hentai, and child tags only when this is on."
+          value={store.settings.searchAdultTags}
+          onChange={(searchAdultTags) => store.updateSettings({ searchAdultTags })}
         />
       </SettingsSection>
 

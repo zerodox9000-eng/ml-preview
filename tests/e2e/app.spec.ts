@@ -138,7 +138,7 @@ test("mobile feeds, search, detail, recommendations, and navigation state work",
   await page.getByRole("link", { name: "Recs" }).click();
   await page.getByLabel("Base title").fill("Solo");
   await page.locator(".recommendation-pick").first().click();
-  await expect(page.getByText("Most similar and loved")).toBeVisible();
+  await expect(page.getByText("Most loved matches")).toBeVisible();
   await expect(page.getByTestId("title-card").first()).toBeVisible();
 
   await page.getByRole("link", { name: "Feeds" }).click();

@@ -51,13 +51,14 @@ function loadLocalSnapshot(): Partial<AppStateSnapshot> {
 }
 
 function mergeSettings(settings?: Partial<AppSettings>): AppSettings {
+  const defaultShelfIds = new Set(["similar-loved", "latest-similar", "completed-similar", "completed-most-loved"]);
   const savedShelves = settings?.recommendationShelves?.filter(
-    (shelf) => shelf.id !== "latest-similar" && shelf.id !== "completed-similar",
+    (shelf) => !defaultShelfIds.has(shelf.id),
   );
-  const recommendationShelves = savedShelves?.length ? [...savedShelves] : [...DEFAULT_SETTINGS.recommendationShelves];
-  for (const shelf of DEFAULT_SETTINGS.recommendationShelves) {
-    if (!recommendationShelves.some((item) => item.id === shelf.id)) recommendationShelves.push(shelf);
-  }
+  const recommendationShelves = [...DEFAULT_SETTINGS.recommendationShelves, ...(savedShelves ?? [])];
+  const relationshipTags =
+    settings?.searchRelationshipTags ?? settings?.searchSensitiveTags ?? DEFAULT_SETTINGS.searchRelationshipTags;
+  const adultTags = settings?.searchAdultTags ?? settings?.searchSensitiveTags ?? DEFAULT_SETTINGS.searchAdultTags;
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
@@ -83,6 +84,9 @@ function mergeSettings(settings?: Partial<AppSettings>): AppSettings {
       ...DEFAULT_SETTINGS.metricNames,
       ...settings?.metricNames,
     },
+    searchSensitiveTags: relationshipTags && adultTags,
+    searchRelationshipTags: relationshipTags,
+    searchAdultTags: adultTags,
   };
 }
 

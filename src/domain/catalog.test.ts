@@ -51,6 +51,23 @@ describe("catalog normalization", () => {
     expect(normalized.catalog[0].year).toBe(2026);
   });
 
+  it("drops estimated release dates when no first-seen date exists", () => {
+    const normalized = normalizeCatalog([{ ...base, id: 5 }], {});
+    expect(normalized.catalog[0].published?.start_date).toBeNull();
+    expect(normalized.catalog[0].year).toBeNull();
+  });
+
+  it("preserves actual backend release dates", () => {
+    const actual = {
+      ...base,
+      id: 6,
+      published: { start_date: "2021-08-05", end_date: null, start_date_is_estimated: false },
+    };
+    const normalized = normalizeCatalog([actual], {});
+    expect(normalized.catalog[0].published?.start_date).toBe("2021-08-05");
+    expect(normalized.catalog[0].year).toBe(2021);
+  });
+
   it("formats years without thousands separators and derives current growth", () => {
     const current = { ...base, year: 2026 };
     expect(formatMetricValue(current, "year")).toBe("2026");

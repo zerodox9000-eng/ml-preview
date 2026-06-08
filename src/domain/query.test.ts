@@ -133,6 +133,28 @@ describe("runFeedQuery", () => {
       metaHistoryLast: "2024-05-10",
     });
     expect(result.items[0].id).toBe(1);
+    expect(result.activeNotes).toContain("Growth window: 2024-05-01 to 2024-05-10.");
+  });
+
+  it("falls back to popularity when growth data is unavailable", () => {
+    const feed = createFeed("missing growth");
+    feed.filters.sourceMode = "anilist";
+    feed.filters.sourceModes = ["anilist"];
+    feed.sort = [{ id: "growth", metric: "popularityGrowth", direction: "desc" }];
+    const result = runFeedQuery({
+      feed,
+      series: [
+        { ...baseSeries[0], id: 20, display_title: "Lower popularity", stats: { ...baseSeries[0].stats, popularity: 200 } },
+        { ...baseSeries[0], id: 21, display_title: "Higher popularity", stats: { ...baseSeries[0].stats, popularity: 900 } },
+      ],
+      tags,
+      history: {},
+      labels: [],
+      settings: DEFAULT_SETTINGS,
+      metaHistoryFirst: null,
+      metaHistoryLast: null,
+    });
+    expect(result.items.map((item) => item.id)).toEqual([21, 20]);
   });
 
   it("sorts by release date when query index dates are present", () => {

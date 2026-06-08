@@ -11,8 +11,9 @@ import type {
 import { isDateWithin, isFutureDate, resolveRollingWindow } from "./dates";
 import { chapterNumber, historyDeltaForWindow, metricValue } from "./metrics";
 
-const SENSITIVE_MATCH =
-  /\b(Boys['’ ]?Love|Girls['’ ]?Love|Smut|Hentai|Yaoi|Yuri|Shounen Ai|Shoujo Ai|Danmei|Bara|Baihe|Tanbi)\b/i;
+const RELATIONSHIP_SENSITIVE_MATCH =
+  /\b(Boys['’ ]?Love|Girls['’ ]?Love|Yaoi|Yuri|Shounen Ai|Shoujo Ai|Danmei|Bara|Baihe|Tanbi)\b/i;
+const ADULT_SENSITIVE_MATCH = /\b(Smut|Hentai)\b/i;
 
 export function hasAniList(series: SeriesCatalog) {
   return Boolean(
@@ -23,7 +24,7 @@ export function hasAniList(series: SeriesCatalog) {
   );
 }
 
-export function buildSensitiveTagSet(tags: TagNode[]) {
+function buildTagSet(tags: TagNode[], matches: (tag: TagNode) => boolean) {
   const sensitive = new Set<number>();
   const byParent = new Map<number, TagNode[]>();
   for (const tag of tags) {
@@ -40,9 +41,23 @@ export function buildSensitiveTagSet(tags: TagNode[]) {
   };
 
   for (const tag of tags) {
-    if (SENSITIVE_MATCH.test(`${tag.name} ${tag.path}`)) visit(tag);
+    if (matches(tag)) visit(tag);
   }
   return sensitive;
+}
+
+export function buildSensitiveTagGroups(tags: TagNode[]) {
+  const relationship = buildTagSet(tags, (tag) => RELATIONSHIP_SENSITIVE_MATCH.test(`${tag.name} ${tag.path}`));
+  const adult = buildTagSet(tags, (tag) => ADULT_SENSITIVE_MATCH.test(`${tag.name} ${tag.path}`));
+  return {
+    relationship,
+    adult,
+    all: new Set([...relationship, ...adult]),
+  };
+}
+
+export function buildSensitiveTagSet(tags: TagNode[]) {
+  return buildSensitiveTagGroups(tags).all;
 }
 
 function expandTagIds(ids: number[], tags: TagNode[]) {
@@ -145,6 +160,11 @@ export function runFeedQuery(args: {
   }
 
   const window = resolveRollingWindow(filters.rolling, metaHistoryLast);
+  const usesHistorySort = feed.sort.some((rule) => rule.metric.includes("Growth") || rule.metric.includes("Delta"));
+  if (window && usesHistorySort) {
+    activeNotes.push(`Growth window: ${window.from} to ${window.to}.`);
+    if (Object.keys(history).length === 0) activeNotes.push("Growth sorting will update after history sync finishes.");
+  }
   if (window && metaHistoryFirst && window.from < metaHistoryFirst) {
     limitedHistory = true;
     activeNotes.push(`History is currently available from ${metaHistoryFirst} to ${metaHistoryLast}.`);
@@ -239,6 +259,18 @@ export function runFeedQuery(args: {
       if (av === bv) continue;
       const direction = rule.direction === "asc" ? 1 : -1;
       return av > bv ? direction : -direction;
+    }
+    const fallbackMetrics: Array<"popularity" | "fanFavouriteRaw" | "favourites"> = ["popularity", "fanFavouriteRaw", "favourites"];
+    for (const metric of fallbackMetrics) {
+      const av = metricValue(a, metric, history, metaHistoryLast);
+      const bv = metricValue(b, metric, history, metaHistoryLast);
+      const aMissing = av === -Infinity || av == null || Number.isNaN(Number(av));
+      const bMissing = bv === -Infinity || bv == null || Number.isNaN(Number(bv));
+      if (aMissing || bMissing) {
+        if (aMissing && bMissing) continue;
+        return aMissing ? 1 : -1;
+      }
+      if (av !== bv) return av > bv ? -1 : 1;
     }
     return a.display_title.localeCompare(b.display_title);
   });
