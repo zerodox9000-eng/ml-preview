@@ -31,6 +31,14 @@ export interface PublishedDates {
   end_date_is_estimated?: boolean | null;
 }
 
+export interface SeriesTitle {
+  language: string | null;
+  title: string;
+  traits: string[];
+  is_primary: boolean;
+  note?: string | null;
+}
+
 export interface SeriesCatalog {
   id: number;
   merged_ids?: number[];
@@ -38,6 +46,7 @@ export interface SeriesCatalog {
   mangabaka_title?: string | null;
   native_title?: string | null;
   romanized_title?: string | null;
+  titles?: SeriesTitle[];
   cover: string | null;
   year: number | null;
   status: string | null;

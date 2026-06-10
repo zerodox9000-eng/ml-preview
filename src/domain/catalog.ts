@@ -47,34 +47,6 @@ function candidateStrings(values: unknown[]) {
     .filter((candidate) => candidate && !PLACEHOLDER_TITLE.test(candidate));
 }
 
-function extractEnglishTitleValues(value: unknown): unknown[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.flatMap(extractEnglishTitleValues);
-  if (typeof value !== "object") return [];
-
-  const record = value as Record<string, unknown>;
-  const language = cleanText(
-    typeof record.language === "string" ? record.language : typeof record.lang === "string" ? record.lang : null,
-  ).toLocaleLowerCase();
-
-  const values: unknown[] = [
-    record.english,
-    record.en,
-    record.eng,
-    record.english_title,
-    record.title_english,
-    record.englishTitle,
-    record.titleEnglish,
-    record.nameEnglish,
-  ];
-
-  if (/^(en|eng|english)$/i.test(language)) {
-    values.push(record.title, record.name, record.value, record.display_title);
-  }
-
-  return values.filter(Boolean);
-}
-
 function sourceTitleCandidates(item: SeriesCatalog) {
   const candidates: string[] = [];
   const animePlanetSlug = item.source?.animeplanet?.id ?? lastUrlSegment(item.source?.animeplanet?.url);
@@ -86,50 +58,86 @@ function sourceTitleCandidates(item: SeriesCatalog) {
   return candidates;
 }
 
-function rawTitleCandidates(item: SeriesCatalog) {
+function titleEntryGroups(item: SeriesCatalog) {
   const raw = item as SeriesCatalog & Record<string, unknown>;
-  return candidateStrings([
-    item.mangabaka_title,
-    raw.mangabakaTitle,
-    raw.series_title,
-    raw.original_title,
-    raw.title,
-    raw.name,
-    item.native_title,
-    item.romanized_title,
-  ]);
+  const titleValues: unknown[] = Array.isArray(raw.titles) ? raw.titles : [];
+  const englishTitles = titleValues
+    .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
+    .filter((title) => cleanText(typeof title.language === "string" ? title.language : typeof title.lang === "string" ? title.lang : null).toLocaleLowerCase() === "en")
+    .map((title) => ({
+      title: cleanText(typeof title.title === "string" ? title.title : typeof title.value === "string" ? title.value : typeof title.name === "string" ? title.name : null),
+      traits: Array.isArray(title.traits) ? title.traits.map(String) : [],
+      isPrimary: title.is_primary === true || title.isPrimary === true,
+    }))
+    .filter((title) => title.title && !PLACEHOLDER_TITLE.test(title.title));
+
+  return {
+    primaryOfficial: englishTitles.filter((title) => title.isPrimary && title.traits.includes("official")).map((title) => title.title),
+    primary: englishTitles.filter((title) => title.isPrimary).map((title) => title.title),
+    official: englishTitles.filter((title) => title.traits.includes("official")).map((title) => title.title),
+    anyEnglish: englishTitles.map((title) => title.title),
+  };
 }
 
 function preferredTitleCandidates(item: SeriesCatalog) {
   const raw = item as SeriesCatalog & Record<string, unknown>;
-  const titles = raw.titles;
+  const titleGroups = titleEntryGroups(item);
   const explicitEnglish = candidateStrings([
     raw.english_title,
     raw.title_english,
     raw.englishTitle,
     raw.titleEnglish,
     raw.nameEnglish,
-    ...extractEnglishTitleValues(titles),
   ]);
-  const rawTitles = new Set(rawTitleCandidates(item).map((title) => title.toLocaleLowerCase()));
-  const sources = sourceTitleCandidates(item);
   const displayTitle = cleanText(item.display_title);
-  const displayLooksRaw = rawTitles.has(displayTitle.toLocaleLowerCase());
+  const bestEnglishTitle = firstCandidate([
+    titleGroups.primaryOfficial,
+    titleGroups.primary,
+    titleGroups.official,
+    titleGroups.anyEnglish,
+  ]);
+  const rawTitles = new Set(
+    candidateStrings([
+      item.mangabaka_title,
+      raw.mangabakaTitle,
+      raw.series_title,
+      raw.original_title,
+      raw.title,
+      raw.name,
+      item.native_title,
+      item.romanized_title,
+    ]).map((title) => title.toLocaleLowerCase()),
+  );
+  const displayIsRawAlias = rawTitles.has(displayTitle.toLocaleLowerCase());
+  const betterEnglishTitleExists = Boolean(
+    bestEnglishTitle &&
+      displayTitle &&
+      bestEnglishTitle.toLocaleLowerCase() !== displayTitle.toLocaleLowerCase(),
+  );
 
   return {
+    display:
+      displayTitle &&
+      !PLACEHOLDER_TITLE.test(displayTitle) &&
+      !(displayIsRawAlias && betterEnglishTitleExists)
+        ? [displayTitle]
+        : [],
     explicitEnglish,
-    display: displayTitle && !PLACEHOLDER_TITLE.test(displayTitle) && (!displayLooksRaw || sources.length === 0) ? [displayTitle] : [],
-    sources,
+    englishPrimaryOfficial: titleGroups.primaryOfficial,
+    englishPrimary: titleGroups.primary,
+    englishOfficial: titleGroups.official,
+    englishAny: titleGroups.anyEnglish,
+    mangabaka: candidateStrings([item.mangabaka_title, raw.mangabakaTitle, raw.series_title, raw.original_title, raw.title, raw.name]),
     aliases: (() => {
       const aliases = raw.aliases ?? raw.alternative_titles ?? raw.synonyms;
       const candidates: unknown[] = [raw.preferred_title, raw.main_title];
-      if (Array.isArray(titles)) candidates.push(...titles);
-      else if (titles && typeof titles === "object") candidates.push(...Object.values(titles));
       if (Array.isArray(aliases)) candidates.push(...aliases);
       else if (aliases && typeof aliases === "object") candidates.push(...Object.values(aliases));
       return candidateStrings(candidates);
     })(),
-    raw: rawTitleCandidates(item),
+    native: candidateStrings([item.native_title]),
+    romanized: candidateStrings([item.romanized_title]),
+    sources: sourceTitleCandidates(item),
   };
 }
 
@@ -151,11 +159,17 @@ export function resolveDisplayTitle(item: SeriesCatalog, fallback?: SeriesCatalo
   const records = fallback ? [fallback, item] : [item];
   const tiers = records.map(preferredTitleCandidates);
   const title = firstCandidate([
-    tiers.flatMap((tier) => tier.explicitEnglish),
     tiers.flatMap((tier) => tier.display),
-    tiers.flatMap((tier) => tier.sources),
+    tiers.flatMap((tier) => tier.explicitEnglish),
+    tiers.flatMap((tier) => tier.englishPrimaryOfficial),
+    tiers.flatMap((tier) => tier.englishPrimary),
+    tiers.flatMap((tier) => tier.englishOfficial),
+    tiers.flatMap((tier) => tier.englishAny),
+    tiers.flatMap((tier) => tier.mangabaka),
     tiers.flatMap((tier) => tier.aliases),
-    tiers.flatMap((tier) => tier.raw),
+    tiers.flatMap((tier) => tier.native),
+    tiers.flatMap((tier) => tier.romanized),
+    tiers.flatMap((tier) => tier.sources),
     [cleanText(item.display_title)],
   ]);
   return title || "Unknown Title";
@@ -224,7 +238,7 @@ function mergeRecord(left: SeriesCatalog, right: SeriesCatalog) {
     mangabaka_title: preferred.mangabaka_title ?? secondary.mangabaka_title ?? null,
     native_title: preferred.native_title ?? secondary.native_title ?? null,
     romanized_title: preferred.romanized_title ?? secondary.romanized_title ?? null,
-    display_title: resolveDisplayTitle(preferred, secondary),
+    display_title: resolveDisplayTitle(secondary, preferred),
     stats: {
       popularity: newestNumber(left.stats?.popularity, right.stats?.popularity, rightIsNewer),
       favourites: newestNumber(left.stats?.favourites, right.stats?.favourites, rightIsNewer),

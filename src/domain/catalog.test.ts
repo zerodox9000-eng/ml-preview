@@ -103,6 +103,10 @@ describe("catalog normalization", () => {
       id: 8,
       display_title: "Watashi ga Akuyaku Koushaku wo Tasukeru Riyuu",
       mangabaka_title: "Watashi ga Akuyaku Koushaku wo Tasukeru Riyuu",
+      titles: [
+        { language: "en", title: "Why Am I Helping the Villain Duke?", traits: [], is_primary: false, note: null },
+        { language: "en", title: "Why She Helps the Villain", traits: [], is_primary: true, note: null },
+      ],
       source: {
         animeplanet: {
           id: "why-she-helps-the-villain",
@@ -120,12 +124,53 @@ describe("catalog normalization", () => {
     expect(resolveDisplayTitle(detail, catalogItem)).toBe("Why She Helps the Villain");
   });
 
-  it("uses an English source slug before a raw romanized display title", () => {
+  it("uses MangaBaka primary English title entries before romanized raw titles", () => {
     const detail = {
       ...base,
       id: 9,
       display_title: "Isegyeseo Yubunamdoen Sseol",
       mangabaka_title: "Isegyeseo Yubunamdoen Sseol",
+      titles: [
+        { language: "en", title: "I Became a Married Man in Another World", traits: [], is_primary: true, note: null },
+        { language: "en", title: "The Story of Becoming a Married Man in Another World", traits: [], is_primary: false, note: null },
+      ],
+    } as SeriesCatalog;
+
+    expect(resolveDisplayTitle(detail)).toBe("I Became a Married Man in Another World");
+  });
+
+  it("keeps MangaBaka display titles ahead of external source slugs", () => {
+    const detail = {
+      ...base,
+      id: 10,
+      display_title: "Her Game of Go",
+      mangabaka_title: "Her Game of Go",
+      romanized_title: "Sonyeobaduk",
+      titles: [
+        { language: "en", title: "Girl Go", traits: [], is_primary: false, note: null },
+        { language: "en", title: "Girl's Baduk", traits: [], is_primary: false, note: null },
+        { language: "en", title: "Her Game of Go", traits: ["official"], is_primary: true, note: null },
+      ],
+      source: {
+        animeplanet: {
+          id: "girls-baduk",
+          rating: null,
+          url: "https://www.anime-planet.com/manga/girls-baduk",
+        },
+      },
+    } as SeriesCatalog;
+
+    expect(resolveDisplayTitle(detail)).toBe("Her Game of Go");
+  });
+
+  it("uses source slugs only when MangaBaka title fields are missing or placeholders", () => {
+    const detail = {
+      ...base,
+      id: 11,
+      display_title: "Unknown Title",
+      mangabaka_title: null,
+      native_title: null,
+      romanized_title: null,
       source: {
         animeplanet: {
           id: "i-became-a-married-man-in-another-world",
@@ -138,12 +183,14 @@ describe("catalog normalization", () => {
     expect(resolveDisplayTitle(detail)).toBe("I Became a Married Man in Another World");
   });
 
-  it("falls back to romanized titles when no English title or source slug exists", () => {
+  it("falls back to romanized titles when no English or display title exists", () => {
     const detail = {
       ...base,
-      id: 10,
-      display_title: "Isegyeseo Yubunamdoen Sseol",
-      mangabaka_title: "Isegyeseo Yubunamdoen Sseol",
+      id: 12,
+      display_title: "Unknown Title",
+      mangabaka_title: null,
+      native_title: null,
+      romanized_title: "Isegyeseo Yubunamdoen Sseol",
     };
 
     expect(resolveDisplayTitle(detail)).toBe("Isegyeseo Yubunamdoen Sseol");
