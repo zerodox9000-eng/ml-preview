@@ -7,12 +7,22 @@ function cleanText(value?: string | null) {
 }
 
 function titleCaseSlug(value: string) {
-  return decodeURIComponent(value)
+  const minorWords = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "or", "per", "the", "to", "vs", "via", "with"]);
+  const words = decodeURIComponent(value)
     .replace(/\.[a-z0-9]+$/i, "")
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/\b\w/g, (letter) => letter.toLocaleUpperCase());
+    .split(" ")
+    .filter(Boolean);
+
+  return words
+    .map((word, index) => {
+      const lower = word.toLocaleLowerCase();
+      if (index > 0 && minorWords.has(lower)) return lower;
+      return lower.replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase());
+    })
+    .join(" ");
 }
 
 function lastUrlSegment(value?: string | null) {
@@ -26,40 +36,8 @@ function lastUrlSegment(value?: string | null) {
   }
 }
 
-function collectTitleCandidates(item: SeriesCatalog) {
-  const raw = item as SeriesCatalog & Record<string, unknown>;
-  const candidates: unknown[] = [
-    item.mangabaka_title,
-    raw.mangabakaTitle,
-    raw.series_title,
-    raw.original_title,
-    raw.title,
-    item.display_title,
-    raw.title,
-    raw.name,
-    item.native_title,
-    item.romanized_title,
-    raw.english_title,
-    raw.title_english,
-    raw.preferred_title,
-    raw.main_title,
-  ];
-
-  const titles = raw.titles;
-  if (Array.isArray(titles)) candidates.push(...titles);
-  else if (titles && typeof titles === "object") candidates.push(...Object.values(titles));
-
-  const aliases = raw.aliases ?? raw.alternative_titles ?? raw.synonyms;
-  if (Array.isArray(aliases)) candidates.push(...aliases);
-  else if (aliases && typeof aliases === "object") candidates.push(...Object.values(aliases));
-
-  const animePlanetSlug = item.source?.animeplanet?.id ?? lastUrlSegment(item.source?.animeplanet?.url);
-  if (animePlanetSlug) candidates.push(titleCaseSlug(animePlanetSlug));
-
-  const readSlug = lastUrlSegment(item.links?.read_en);
-  if (readSlug && !/^(info|list|detail|series)$/i.test(readSlug)) candidates.push(titleCaseSlug(readSlug));
-
-  return candidates
+function candidateStrings(values: unknown[]) {
+  return values
     .flatMap((candidate) => {
       if (typeof candidate === "string") return [candidate];
       if (candidate && typeof candidate === "object") return Object.values(candidate).filter((value): value is string => typeof value === "string");
@@ -69,11 +47,117 @@ function collectTitleCandidates(item: SeriesCatalog) {
     .filter((candidate) => candidate && !PLACEHOLDER_TITLE.test(candidate));
 }
 
+function extractEnglishTitleValues(value: unknown): unknown[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(extractEnglishTitleValues);
+  if (typeof value !== "object") return [];
+
+  const record = value as Record<string, unknown>;
+  const language = cleanText(
+    typeof record.language === "string" ? record.language : typeof record.lang === "string" ? record.lang : null,
+  ).toLocaleLowerCase();
+
+  const values: unknown[] = [
+    record.english,
+    record.en,
+    record.eng,
+    record.english_title,
+    record.title_english,
+    record.englishTitle,
+    record.titleEnglish,
+    record.nameEnglish,
+  ];
+
+  if (/^(en|eng|english)$/i.test(language)) {
+    values.push(record.title, record.name, record.value, record.display_title);
+  }
+
+  return values.filter(Boolean);
+}
+
+function sourceTitleCandidates(item: SeriesCatalog) {
+  const candidates: string[] = [];
+  const animePlanetSlug = item.source?.animeplanet?.id ?? lastUrlSegment(item.source?.animeplanet?.url);
+  if (animePlanetSlug) candidates.push(titleCaseSlug(animePlanetSlug));
+
+  const readSlug = lastUrlSegment(item.links?.read_en);
+  if (readSlug && !/^(info|list|detail|series)$/i.test(readSlug)) candidates.push(titleCaseSlug(readSlug));
+
+  return candidates;
+}
+
+function rawTitleCandidates(item: SeriesCatalog) {
+  const raw = item as SeriesCatalog & Record<string, unknown>;
+  return candidateStrings([
+    item.mangabaka_title,
+    raw.mangabakaTitle,
+    raw.series_title,
+    raw.original_title,
+    raw.title,
+    raw.name,
+    item.native_title,
+    item.romanized_title,
+  ]);
+}
+
+function preferredTitleCandidates(item: SeriesCatalog) {
+  const raw = item as SeriesCatalog & Record<string, unknown>;
+  const titles = raw.titles;
+  const explicitEnglish = candidateStrings([
+    raw.english_title,
+    raw.title_english,
+    raw.englishTitle,
+    raw.titleEnglish,
+    raw.nameEnglish,
+    ...extractEnglishTitleValues(titles),
+  ]);
+  const rawTitles = new Set(rawTitleCandidates(item).map((title) => title.toLocaleLowerCase()));
+  const sources = sourceTitleCandidates(item);
+  const displayTitle = cleanText(item.display_title);
+  const displayLooksRaw = rawTitles.has(displayTitle.toLocaleLowerCase());
+
+  return {
+    explicitEnglish,
+    display: displayTitle && !PLACEHOLDER_TITLE.test(displayTitle) && (!displayLooksRaw || sources.length === 0) ? [displayTitle] : [],
+    sources,
+    aliases: (() => {
+      const aliases = raw.aliases ?? raw.alternative_titles ?? raw.synonyms;
+      const candidates: unknown[] = [raw.preferred_title, raw.main_title];
+      if (Array.isArray(titles)) candidates.push(...titles);
+      else if (titles && typeof titles === "object") candidates.push(...Object.values(titles));
+      if (Array.isArray(aliases)) candidates.push(...aliases);
+      else if (aliases && typeof aliases === "object") candidates.push(...Object.values(aliases));
+      return candidateStrings(candidates);
+    })(),
+    raw: rawTitleCandidates(item),
+  };
+}
+
+function firstCandidate(groups: string[][]) {
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const candidate of group) {
+      const key = candidate.toLocaleLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
 export function resolveDisplayTitle(item: SeriesCatalog, fallback?: SeriesCatalog) {
-  const title =
-    collectTitleCandidates(item)[0] ??
-    (fallback ? collectTitleCandidates(fallback)[0] : null) ??
-    cleanText(item.display_title);
+  const records = fallback ? [fallback, item] : [item];
+  const tiers = records.map(preferredTitleCandidates);
+  const title = firstCandidate([
+    tiers.flatMap((tier) => tier.explicitEnglish),
+    tiers.flatMap((tier) => tier.display),
+    tiers.flatMap((tier) => tier.sources),
+    tiers.flatMap((tier) => tier.aliases),
+    tiers.flatMap((tier) => tier.raw),
+    [cleanText(item.display_title)],
+  ]);
   return title || "Unknown Title";
 }
 

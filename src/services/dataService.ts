@@ -1,7 +1,7 @@
 import { inflate } from "pako";
 import { db, saveSyncMeta } from "../db/appDb";
 import { DATA_SOURCE_CANDIDATES } from "../domain/defaults";
-import { normalizeCatalog } from "../domain/catalog";
+import { normalizeCatalog, resolveDisplayTitle } from "../domain/catalog";
 import type { HistoryMap, SeriesCatalog, SeriesDetail, SyncMeta, TagNode } from "../domain/types";
 
 function bytesToText(bytes: Uint8Array) {
@@ -86,6 +86,10 @@ function mergeLiveCatalog(liveCatalog: SeriesCatalog[], enrichedCatalog: SeriesC
       source: fixedLive.source ?? enriched.source,
       published: livePublished?.start_date || livePublished?.end_date ? livePublished : enriched.published,
       last_updated_at: fixedLive.last_updated_at ?? enriched.last_updated_at,
+      display_title: resolveDisplayTitle(enriched, fixedLive),
+      mangabaka_title: fixedLive.mangabaka_title ?? enriched.mangabaka_title,
+      native_title: fixedLive.native_title ?? enriched.native_title,
+      romanized_title: fixedLive.romanized_title ?? enriched.romanized_title,
       authors: fixedLive.authors?.length ? fixedLive.authors : enriched.authors,
       artists: fixedLive.artists?.length ? fixedLive.artists : enriched.artists,
       links: { ...(enriched.links ?? {}), ...(fixedLive.links ?? {}) },

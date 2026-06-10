@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCatalog } from "./catalog";
+import { normalizeCatalog, resolveDisplayTitle } from "./catalog";
 import { formatMetricValue, metricValue } from "./metrics";
 import type { HistoryMap, SeriesCatalog } from "./types";
 
@@ -95,6 +95,58 @@ describe("catalog normalization", () => {
       },
     ], {});
     expect(normalized.catalog[0].display_title).toBe("The Demonic Warrior");
+  });
+
+  it("keeps the bundled English title ahead of a raw MangaBaka romanized detail title", () => {
+    const detail = {
+      ...base,
+      id: 8,
+      display_title: "Watashi ga Akuyaku Koushaku wo Tasukeru Riyuu",
+      mangabaka_title: "Watashi ga Akuyaku Koushaku wo Tasukeru Riyuu",
+      source: {
+        animeplanet: {
+          id: "why-she-helps-the-villain",
+          rating: null,
+          url: "https://www.anime-planet.com/manga/why-she-helps-the-villain",
+        },
+      },
+    } as SeriesCatalog;
+    const catalogItem = {
+      ...base,
+      id: 8,
+      display_title: "Why She Helps the Villain",
+    };
+
+    expect(resolveDisplayTitle(detail, catalogItem)).toBe("Why She Helps the Villain");
+  });
+
+  it("uses an English source slug before a raw romanized display title", () => {
+    const detail = {
+      ...base,
+      id: 9,
+      display_title: "Isegyeseo Yubunamdoen Sseol",
+      mangabaka_title: "Isegyeseo Yubunamdoen Sseol",
+      source: {
+        animeplanet: {
+          id: "i-became-a-married-man-in-another-world",
+          rating: null,
+          url: "https://www.anime-planet.com/manga/i-became-a-married-man-in-another-world",
+        },
+      },
+    } as SeriesCatalog;
+
+    expect(resolveDisplayTitle(detail)).toBe("I Became a Married Man in Another World");
+  });
+
+  it("falls back to romanized titles when no English title or source slug exists", () => {
+    const detail = {
+      ...base,
+      id: 10,
+      display_title: "Isegyeseo Yubunamdoen Sseol",
+      mangabaka_title: "Isegyeseo Yubunamdoen Sseol",
+    };
+
+    expect(resolveDisplayTitle(detail)).toBe("Isegyeseo Yubunamdoen Sseol");
   });
 
   it("formats years without thousands separators and derives current growth", () => {
