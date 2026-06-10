@@ -23,4 +23,23 @@ describe("metrics", () => {
     expect(formatMetricValue(series, "releaseDate")).toBe("n/a");
     expect(formatMetricValue(series, "endDate")).toBe("n/a");
   });
+
+  it("uses first-seen/update fallback for release dates but ignores estimated end dates", () => {
+    const fallbackSeries: SeriesCatalog = {
+      ...series,
+      id: 2,
+      year: 2026,
+      first_seen_at: "2026-06-07T04:00:00.000Z",
+      last_updated_at: "2026-06-08T04:00:00.000Z",
+      published: {
+        start_date: "2026-01-01",
+        start_date_is_estimated: true,
+        end_date: "2026-12-31",
+        end_date_is_estimated: true,
+      },
+    };
+    expect(formatMetricValue(fallbackSeries, "releaseDate")).toBe("2026-06-07");
+    expect(metricValue(fallbackSeries, "endDate")).toBe(-Infinity);
+    expect(formatMetricValue(fallbackSeries, "endDate")).toBe("n/a");
+  });
 });

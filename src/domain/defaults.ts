@@ -74,8 +74,8 @@ export const DEFAULT_DETAIL_VISIBLE: DetailVisibleFields = {
 };
 
 export const DEFAULT_FILTERS: FeedFilters = {
-  sourceMode: "mixed",
-  sourceModes: ["anilist", "non-anilist"],
+  sourceMode: "anilist",
+  sourceModes: ["anilist"],
   query: "",
   includeTagIds: [],
   excludeTagIds: [...DEFAULT_SENSITIVE_EXCLUDE_TAG_IDS],
@@ -114,7 +114,7 @@ export const DEFAULT_RECOMMENDATION_SHELVES: RecommendationShelf[] = [
     name: "Most loved matches",
     statusMode: "any",
     dateMode: "any",
-    sourceModes: ["anilist", "non-anilist"],
+    sourceModes: ["anilist"],
     sort: [{ id: "rec-fan", metric: "fanFavouriteRaw", direction: "desc" }],
     metricRanges: [
       { id: "rec-min-pop", metric: "popularity", min: 500, max: null },

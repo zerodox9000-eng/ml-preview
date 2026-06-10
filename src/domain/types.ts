@@ -35,6 +35,9 @@ export interface SeriesCatalog {
   id: number;
   merged_ids?: number[];
   display_title: string;
+  mangabaka_title?: string | null;
+  native_title?: string | null;
+  romanized_title?: string | null;
   cover: string | null;
   year: number | null;
   status: string | null;

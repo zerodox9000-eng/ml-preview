@@ -9,6 +9,7 @@ const tags: TagNode[] = [
   { id: 3, name: "Fantasy", path: "Themes > Fantasy", is_genre: true, parent_id: null, level: 2 },
   { id: 4, name: "Isekai", path: "Themes > Fantasy > Isekai", is_genre: false, parent_id: 3, level: 3 },
   { id: 5, name: "Non-BL with Two Male Leads", path: "Themes > Relationship > Non-BL with Two Male Leads", is_genre: false, parent_id: null, level: 3 },
+  { id: 6, name: "Adult Comedy", path: "Sexual Content > Intensity > Hentai > Adult Comedy", is_genre: false, parent_id: 2, level: 3 },
 ];
 
 const baseSeries: SeriesCatalog[] = [
@@ -67,8 +68,6 @@ const history: HistoryMap = {
 describe("runFeedQuery", () => {
   it("hides sensitive tags unless adult content is unlocked", () => {
     const feed = createFeed("safe");
-    feed.filters.sourceMode = "mixed";
-    feed.filters.sourceModes = ["anilist", "non-anilist"];
     const result = runFeedQuery({
       feed,
       series: baseSeries,
@@ -79,7 +78,22 @@ describe("runFeedQuery", () => {
       metaHistoryFirst: "2024-05-01",
       metaHistoryLast: "2024-05-10",
     });
-    expect(result.items.map((item) => item.id)).toEqual([1, 3]);
+    expect(result.items.map((item) => item.id)).toEqual([1]);
+  });
+
+  it("does not hide child-only tags when a sensitive parent is excluded", () => {
+    const feed = createFeed("exact sensitive");
+    const result = runFeedQuery({
+      feed,
+      series: [{ ...baseSeries[0], id: 44, display_title: "Child only", tag_ids: [6] }],
+      tags,
+      history,
+      labels: [],
+      settings: DEFAULT_SETTINGS,
+      metaHistoryFirst: "2024-05-01",
+      metaHistoryLast: "2024-05-10",
+    });
+    expect(result.items.map((item) => item.id)).toEqual([44]);
   });
 
   it("does not hide non-BL relationship tags as sensitive Boys Love", () => {
@@ -103,6 +117,8 @@ describe("runFeedQuery", () => {
     const feed = createFeed("non anilist");
     feed.filters.sourceMode = "non-anilist";
     feed.filters.sourceModes = ["non-anilist"];
+    feed.sort = [{ id: "title", metric: "title", direction: "asc" }];
+    feed.view.metricSlots = ["year", "chapters"];
     const result = runFeedQuery({
       feed,
       series: baseSeries,
@@ -163,6 +179,7 @@ describe("runFeedQuery", () => {
     feed.filters.sourceModes = ["anilist", "non-anilist"];
     feed.filters.includeTagIds = [1, 2];
     feed.sort = [{ id: "release", metric: "releaseDate", direction: "desc" }];
+    feed.view.metricSlots = ["releaseDate"];
     const result = runFeedQuery({
       feed,
       series: baseSeries,
@@ -181,6 +198,7 @@ describe("runFeedQuery", () => {
     feed.filters.sourceMode = "non-anilist";
     feed.filters.sourceModes = ["non-anilist"];
     feed.sort = [{ id: "release", metric: "releaseDate", direction: "desc" }];
+    feed.view.metricSlots = ["releaseDate"];
     const result = runFeedQuery({
       feed,
       series: [
@@ -202,6 +220,7 @@ describe("runFeedQuery", () => {
     feed.filters.sourceMode = "mixed";
     feed.filters.sourceModes = ["anilist", "non-anilist"];
     feed.sort = [{ id: "release", metric: "releaseDate", direction: "desc" }];
+    feed.view.metricSlots = ["releaseDate"];
     const future = { ...baseSeries[0], id: 41, display_title: "Future dated", published: { start_date: "2999-01-01", end_date: null } };
     const past = { ...baseSeries[0], id: 42, display_title: "Past dated", published: { start_date: "2024-12-01", end_date: null } };
     const result = runFeedQuery({
@@ -231,7 +250,7 @@ describe("runFeedQuery", () => {
     expect(filtered.items).toEqual([]);
   });
 
-  it("matches child tags when a parent tag is selected", () => {
+  it("keeps parent tag selection exact instead of matching children", () => {
     const feed = createFeed("hierarchy");
     feed.filters.sourceModes = ["anilist", "non-anilist"];
     feed.filters.includeTagIds = [3];
@@ -249,6 +268,6 @@ describe("runFeedQuery", () => {
       metaHistoryFirst: "2024-05-01",
       metaHistoryLast: "2024-05-10",
     });
-    expect(result.items.map((item) => item.id)).toEqual([10]);
+    expect(result.items.map((item) => item.id)).toEqual([]);
   });
 });

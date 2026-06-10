@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DEFAULT_SENSITIVE_EXCLUDE_TAG_IDS, DEFAULT_SETTINGS } from "../domain/defaults";
 import defaultFeedsJson from "../domain/defaultFeeds.generated.json";
+import { feedUsesAniListOnlyParameters } from "../domain/query";
 import type {
   AppSettings,
   AppStateSnapshot,
@@ -94,7 +95,7 @@ function normalizeFeed(feed: Feed): Feed {
   const excludeTagIds = feed.filters.excludeTagIds?.length
     ? feed.filters.excludeTagIds
     : DEFAULT_SENSITIVE_EXCLUDE_TAG_IDS;
-  return {
+  const normalized: Feed = {
     ...feed,
     description: feed.description ?? "",
     showDescription: feed.showDescription ?? false,
@@ -128,6 +129,17 @@ function normalizeFeed(feed: Feed): Feed {
       },
     },
   };
+  if (feedUsesAniListOnlyParameters(normalized)) {
+    return {
+      ...normalized,
+      filters: {
+        ...normalized.filters,
+        sourceMode: "anilist",
+        sourceModes: ["anilist"],
+      },
+    };
+  }
+  return normalized;
 }
 
 const AppStoreContext = createContext<StoreState | null>(null);

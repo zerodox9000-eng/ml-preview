@@ -9,11 +9,10 @@ import type {
   UserLabel,
 } from "./types";
 import { isDateWithin, isFutureDate, resolveRollingWindow } from "./dates";
-import { chapterNumber, historyDeltaForWindow, metricValue } from "./metrics";
+import { chapterNumber, effectiveEndDate, effectiveReleaseDate, historyDeltaForWindow, metricDefinition, metricValue } from "./metrics";
 
-const RELATIONSHIP_SENSITIVE_MATCH =
-  /\b(Boys['’ ]?Love|Girls['’ ]?Love|Yaoi|Yuri|Shounen Ai|Shoujo Ai|Danmei|Bara|Baihe|Tanbi)\b/i;
-const ADULT_SENSITIVE_MATCH = /\b(Smut|Hentai)\b/i;
+const RELATIONSHIP_SENSITIVE_NAMES = new Set(["boys love", "girls love"]);
+const ADULT_SENSITIVE_NAMES = new Set(["smut", "hentai"]);
 
 export function hasAniList(series: SeriesCatalog) {
   return Boolean(
@@ -24,31 +23,13 @@ export function hasAniList(series: SeriesCatalog) {
   );
 }
 
-function buildTagSet(tags: TagNode[], matches: (tag: TagNode) => boolean) {
-  const sensitive = new Set<number>();
-  const byParent = new Map<number, TagNode[]>();
-  for (const tag of tags) {
-    if (tag.parent_id != null) {
-      const existing = byParent.get(tag.parent_id) ?? [];
-      existing.push(tag);
-      byParent.set(tag.parent_id, existing);
-    }
-  }
-
-  const visit = (tag: TagNode) => {
-    sensitive.add(tag.id);
-    for (const child of byParent.get(tag.id) ?? []) visit(child);
-  };
-
-  for (const tag of tags) {
-    if (matches(tag)) visit(tag);
-  }
-  return sensitive;
+function buildExactTagSet(tags: TagNode[], names: Set<string>) {
+  return new Set(tags.filter((tag) => names.has(tag.name.trim().toLocaleLowerCase())).map((tag) => tag.id));
 }
 
 export function buildSensitiveTagGroups(tags: TagNode[]) {
-  const relationship = buildTagSet(tags, (tag) => RELATIONSHIP_SENSITIVE_MATCH.test(`${tag.name} ${tag.path}`));
-  const adult = buildTagSet(tags, (tag) => ADULT_SENSITIVE_MATCH.test(`${tag.name} ${tag.path}`));
+  const relationship = buildExactTagSet(tags, RELATIONSHIP_SENSITIVE_NAMES);
+  const adult = buildExactTagSet(tags, ADULT_SENSITIVE_NAMES);
   return {
     relationship,
     adult,
@@ -60,25 +41,46 @@ export function buildSensitiveTagSet(tags: TagNode[]) {
   return buildSensitiveTagGroups(tags).all;
 }
 
-function expandTagIds(ids: number[], tags: TagNode[]) {
-  if (ids.length === 0) return ids;
-  const expanded = new Set(ids);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const tag of tags) {
-      if (tag.parent_id != null && expanded.has(tag.parent_id) && !expanded.has(tag.id)) {
-        expanded.add(tag.id);
-        changed = true;
-      }
-    }
-  }
-  return [...expanded];
-}
-
 function dateTimeValue(value?: string | null) {
   const parsed = value ? Date.parse(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : -Infinity;
+}
+
+function sourceModesFromFilters(feed: Feed) {
+  const filters = feed.filters;
+  return (
+    filters.sourceModes?.length
+      ? filters.sourceModes
+      : filters.sourceMode === "anilist"
+        ? ["anilist"]
+        : filters.sourceMode === "non-anilist"
+          ? ["non-anilist"]
+          : ["anilist", "non-anilist"]
+  ).filter((mode) => mode !== "mixed");
+}
+
+export function feedUsesAniListOnlyParameters(feed: Feed) {
+  const filters = feed.filters;
+  if (
+    filters.minPopularity != null ||
+    filters.maxPopularity != null ||
+    filters.minFavourites != null ||
+    filters.maxFavourites != null ||
+    filters.minMeanScore != null ||
+    filters.maxMeanScore != null
+  ) {
+    return true;
+  }
+  const metrics = [
+    ...feed.sort.map((rule) => rule.metric),
+    ...(filters.metricRanges ?? []).map((range) => range.metric),
+    ...(feed.view?.metricSlots ?? []),
+  ];
+  return metrics.some((metric) => metricDefinition(metric).anilistOnly);
+}
+
+export function effectiveSourceModesForFeed(feed: Feed) {
+  return feedUsesAniListOnlyParameters(feed) ? ["anilist"] : sourceModesFromFilters(feed);
 }
 
 export function tagRoot(tag: TagNode) {
@@ -137,9 +139,9 @@ export function runFeedQuery(args: {
   const filters = feed.filters;
   const tagsById = new Map(tags.map((tag) => [tag.id, tag]));
   const sensitiveTagIds = buildSensitiveTagSet(tags);
-  const includeTagGroups = filters.includeTagIds.map((id) => expandTagIds([id], tags));
-  const includeTagIds = [...new Set(includeTagGroups.flat())];
-  const excludeTagIds = expandTagIds(filters.excludeTagIds, tags);
+  const includeTagGroups = filters.includeTagIds.map((id) => [id]);
+  const includeTagIds = [...new Set(filters.includeTagIds)];
+  const excludeTagIds = filters.excludeTagIds;
   const activeNotes: string[] = [];
   let limitedHistory = false;
   let missingDateData = false;
@@ -183,15 +185,7 @@ export function runFeedQuery(args: {
     if (hasSensitive && !hasIncludedSensitive) return false;
 
     const ani = hasAniList(item);
-    const sourceModes = (
-      filters.sourceModes?.length
-        ? filters.sourceModes
-        : filters.sourceMode === "anilist"
-          ? ["anilist"]
-          : filters.sourceMode === "non-anilist"
-            ? ["non-anilist"]
-            : ["anilist", "non-anilist"]
-    ).filter((mode) => mode !== "mixed");
+    const sourceModes = effectiveSourceModesForFeed(feed);
     if (!sourceModes.includes(ani ? "anilist" : "non-anilist")) return false;
 
     if (filters.statuses.length > 0 && (!item.status || !filters.statuses.includes(item.status))) return false;
@@ -229,7 +223,7 @@ export function runFeedQuery(args: {
     }
 
     if (window && filters.dateField !== "none") {
-      const dateValue = filters.dateField === "release" ? item.published?.start_date : item.published?.end_date;
+      const dateValue = filters.dateField === "release" ? effectiveReleaseDate(item) : effectiveEndDate(item);
       if (!dateValue) {
         missingDateData = true;
         return false;

@@ -29,9 +29,16 @@ function lastUrlSegment(value?: string | null) {
 function collectTitleCandidates(item: SeriesCatalog) {
   const raw = item as SeriesCatalog & Record<string, unknown>;
   const candidates: unknown[] = [
+    item.mangabaka_title,
+    raw.mangabakaTitle,
+    raw.series_title,
+    raw.original_title,
+    raw.title,
     item.display_title,
     raw.title,
     raw.name,
+    item.native_title,
+    item.romanized_title,
     raw.english_title,
     raw.title_english,
     raw.preferred_title,
@@ -130,6 +137,9 @@ function mergeRecord(left: SeriesCatalog, right: SeriesCatalog) {
       ...(left.merged_ids ?? []),
       ...(right.merged_ids ?? []),
     ]),
+    mangabaka_title: preferred.mangabaka_title ?? secondary.mangabaka_title ?? null,
+    native_title: preferred.native_title ?? secondary.native_title ?? null,
+    romanized_title: preferred.romanized_title ?? secondary.romanized_title ?? null,
     display_title: resolveDisplayTitle(preferred, secondary),
     stats: {
       popularity: newestNumber(left.stats?.popularity, right.stats?.popularity, rightIsNewer),
@@ -152,6 +162,7 @@ function mergeRecord(left: SeriesCatalog, right: SeriesCatalog) {
       ...(left.published ?? {}),
       ...(right.published ?? {}),
     },
+    first_seen_at: left.first_seen_at ?? right.first_seen_at ?? null,
     last_updated_at: rightIsNewer ? right.last_updated_at ?? left.last_updated_at : left.last_updated_at,
   } satisfies SeriesCatalog;
 }
@@ -163,6 +174,10 @@ function mergeHistoryEntries(groups: HistoryEntry[][]) {
     if (!existing || entry.p > existing.p || entry.f > existing.f) byDate.set(entry.d, entry);
   }
   return [...byDate.values()].sort((a, b) => a.d.localeCompare(b.d));
+}
+
+function datePart(value?: string | null) {
+  return value?.slice(0, 10) ?? null;
 }
 
 export function normalizeCatalog(
@@ -214,19 +229,23 @@ export function normalizeCatalog(
     const ids = unique(records.flatMap((record) => [record.id, ...(record.merged_ids ?? [])]));
     const entries = mergeHistoryEntries(ids.map((id) => history[String(id)] ?? []));
     const explicitFirstSeen =
-      merged.first_seen_at?.slice(0, 10) ??
-      merged.created_at?.slice(0, 10) ??
-      merged.added_at?.slice(0, 10) ??
+      datePart(merged.first_seen_at) ??
+      datePart(merged.created_at) ??
+      datePart(merged.added_at) ??
       null;
     const historyFirstSeen = entries[0]?.d && entries[0].d !== globalHistoryFirstDate ? entries[0].d : null;
-    const firstSeen = explicitFirstSeen ?? historyFirstSeen;
+    const lastUpdatedDate = datePart(merged.last_updated_at);
+    const firstSeen = explicitFirstSeen ?? historyFirstSeen ?? lastUpdatedDate;
     const published = { ...(merged.published ?? {}) };
     const hasActualStartDate = Boolean(published.start_date && !published.start_date_is_estimated);
     if (!hasActualStartDate) {
-      published.start_date = firstSeen ?? null;
+      published.start_date = firstSeen ?? lastUpdatedDate ?? null;
       published.start_date_is_estimated = Boolean(firstSeen);
     }
-    if (published.end_date_is_estimated) published.end_date = null;
+    if (published.end_date_is_estimated) {
+      published.end_date = null;
+      published.end_date_is_estimated = false;
+    }
     const canonical = {
       ...merged,
       merged_ids: ids,

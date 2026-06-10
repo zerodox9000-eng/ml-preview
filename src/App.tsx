@@ -38,7 +38,7 @@ import {
 } from "react-router-dom";
 import { createFeed, DEFAULT_DETAIL_VISIBLE, DEFAULT_FILTERS, DEFAULT_SORT } from "./domain/defaults";
 import { isFutureDate, resolveRollingWindow } from "./domain/dates";
-import { buildSensitiveTagGroups, isGenreTag, runFeedQuery, tagRoot } from "./domain/query";
+import { buildSensitiveTagGroups, feedUsesAniListOnlyParameters, isGenreTag, runFeedQuery, tagRoot } from "./domain/query";
 import { formatMetricValue, historyDeltaForWindow, METRIC_DEFINITIONS, metricDefinition, metricValue } from "./domain/metrics";
 import { resolveDisplayTitle } from "./domain/catalog";
 import { decodeSharePayload, exportCsv, makeShareUrl, type SharePayload } from "./domain/share";
@@ -220,38 +220,50 @@ function BottomDrawer({
 function HomePage() {
   const store = useAppStore();
   const [editorOpen, setEditorOpen] = useState(false);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const touchStart = useRef<{ x: number; y: number; locked: boolean; cancelled: boolean } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [swipeAnimating, setSwipeAnimating] = useState(false);
   const activeFeed = store.feeds.find((feed) => feed.id === store.activeFeedId) ?? store.feeds[0] ?? null;
+  const activeIndex = activeFeed ? store.feeds.findIndex((feed) => feed.id === activeFeed.id) : -1;
+  const previousFeed = activeIndex > 0 ? store.feeds[activeIndex - 1] : null;
+  const nextFeed = activeIndex >= 0 && activeIndex < store.feeds.length - 1 ? store.feeds[activeIndex + 1] : null;
+  const swiping = Boolean(activeFeed && (swipeOffset !== 0 || swipeAnimating));
 
   useEffect(() => {
     if (!store.activeFeedId && store.feeds[0]) store.setActiveFeedId(store.feeds[0].id);
   }, [store]);
 
-  const animateFeedChange = (nextIndex: number, direction: 1 | -1) => {
-    const width = window.innerWidth || 360;
+  const finishSwipe = (nextIndex: number, targetOffset: number) => {
+    if (nextIndex < 0 || nextIndex >= store.feeds.length) {
+      cancelSwipe();
+      return;
+    }
     setSwipeAnimating(true);
-    setSwipeOffset(-direction * width);
+    setSwipeOffset(targetOffset);
     window.setTimeout(() => {
       store.setActiveFeedId(store.feeds[nextIndex].id);
       resetPageScroll();
       setSwipeAnimating(false);
-      setSwipeOffset(direction * width);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setSwipeAnimating(true);
-          setSwipeOffset(0);
-          window.setTimeout(() => setSwipeAnimating(false), 220);
-        });
-      });
-    }, 190);
+      setSwipeOffset(0);
+    }, 220);
   };
 
-  const settleSwipe = () => {
+  const cancelSwipe = () => {
     setSwipeAnimating(true);
     setSwipeOffset(0);
     window.setTimeout(() => setSwipeAnimating(false), 180);
+  };
+
+  const settleSwipe = (dx: number, dy: number) => {
+    const width = window.innerWidth || 360;
+    const threshold = Math.min(150, Math.max(86, width * 0.24));
+    if (Math.abs(dx) < threshold || Math.abs(dx) < Math.abs(dy) * 1.7 || activeIndex < 0) {
+      cancelSwipe();
+      return;
+    }
+    if (dx < 0 && nextFeed) finishSwipe(activeIndex + 1, -width);
+    else if (dx > 0 && previousFeed) finishSwipe(activeIndex - 1, width);
+    else cancelSwipe();
   };
 
   return (
@@ -275,11 +287,11 @@ function HomePage() {
         </div>
       ) : (
         <div
-          className={`feed-swipe-surface ${swipeAnimating ? "animating" : ""}`}
+          className="feed-swipe-viewport"
           style={{ "--swipe-offset": `${swipeOffset}px` } as React.CSSProperties}
           onTouchStart={(event) => {
             const touch = event.touches[0];
-            touchStart.current = { x: touch.clientX, y: touch.clientY };
+            touchStart.current = { x: touch.clientX, y: touch.clientY, locked: false, cancelled: false };
           }}
           onTouchMove={(event) => {
             const start = touchStart.current;
@@ -287,35 +299,46 @@ function HomePage() {
             const touch = event.touches[0];
             const dx = touch.clientX - start.x;
             const dy = touch.clientY - start.y;
-            if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
+            if (start.cancelled) return;
+            if (!start.locked) {
+              if (Math.abs(dx) < 18 && Math.abs(dy) < 18) return;
+              if (Math.abs(dy) > Math.abs(dx) * 0.8) {
+                start.cancelled = true;
+                setSwipeOffset(0);
+                return;
+              }
+              if (Math.abs(dx) < Math.abs(dy) * 1.55) return;
+              start.locked = true;
+            }
             setSwipeAnimating(false);
-            setSwipeOffset(Math.max(-120, Math.min(120, dx)));
+            const width = window.innerWidth || 360;
+            const leftBound = nextFeed ? -width : -64;
+            const rightBound = previousFeed ? width : 64;
+            setSwipeOffset(Math.max(leftBound, Math.min(rightBound, dx)));
           }}
           onTouchEnd={(event) => {
             const start = touchStart.current;
             touchStart.current = null;
-            if (!start || event.changedTouches.length === 0) {
-              settleSwipe();
+            if (!start || start.cancelled || event.changedTouches.length === 0) {
+              cancelSwipe();
               return;
             }
             const touch = event.changedTouches[0];
             const dx = touch.clientX - start.x;
             const dy = touch.clientY - start.y;
-            if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.35) {
-              settleSwipe();
-              return;
-            }
-            const index = store.feeds.findIndex((item) => item.id === activeFeed.id);
-            const next = dx < 0 ? index + 1 : index - 1;
-            if (next >= 0 && next < store.feeds.length) {
-              animateFeedChange(next, dx < 0 ? 1 : -1);
-            } else {
-              settleSwipe();
-            }
+            settleSwipe(dx, dy);
           }}
-          onTouchCancel={settleSwipe}
+          onTouchCancel={cancelSwipe}
         >
-          <FeedView feed={activeFeed} />
+          {swiping ? (
+            <div className={`feed-swipe-track ${swipeAnimating ? "animating" : ""}`}>
+              <div className="feed-swipe-pane">{previousFeed ? <FeedView feed={previousFeed} /> : null}</div>
+              <div className="feed-swipe-pane"><FeedView feed={activeFeed} /></div>
+              <div className="feed-swipe-pane">{nextFeed ? <FeedView feed={nextFeed} /> : null}</div>
+            </div>
+          ) : (
+            <FeedView feed={activeFeed} />
+          )}
         </div>
       )}
       <BottomDrawer title="Create Feed" open={editorOpen} onOpenChange={setEditorOpen}>
@@ -451,7 +474,7 @@ function FeedView({ feed }: { feed: Feed }) {
         />
       </BottomDrawer>
       <BottomDrawer title="Share Feed" open={shareOpen} onOpenChange={setShareOpen}>
-        <SharePanel payload={{ kind: "feed", version: 1, feed }} />
+        <SharePanel payload={{ kind: "feed", version: 2, feed }} />
       </BottomDrawer>
       <BottomDrawer title="Feed Info" open={infoOpen} onOpenChange={setInfoOpen}>
         <div className="settings-list">
@@ -828,7 +851,7 @@ function FeedCoverCard({
       {menuOpen && (
         <div className="popover-menu card-menu">
           <button type="button" onClick={() => { onEdit(); setMenuOpen(false); }}><SlidersHorizontal size={16} /> Edit</button>
-          <SharePanelButton payload={{ kind: "feed", version: 1, feed }} label="Share" />
+          <SharePanelButton payload={{ kind: "feed", version: 2, feed }} label="Share" />
           <button className="danger-text" type="button" onClick={onDelete}><Trash2 size={16} /> Delete</button>
         </div>
       )}
@@ -850,6 +873,7 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
       ? store.tags.filter((tag) => `${tag.name} ${tag.path}`.toLowerCase().includes(q))
       : store.tags;
   }, [store.tags, tagSearch]);
+  const anilistLocked = feedUsesAniListOnlyParameters(draft);
 
   const updateFilters = (patch: Partial<Feed["filters"]>) => {
     setDraft((current) => ({ ...current, filters: { ...current.filters, ...patch } }));
@@ -859,6 +883,7 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
   };
   const toggleArrayValue = <T,>(values: T[], value: T) => (values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
   const toggleSourceMode = (mode: "anilist" | "non-anilist") => {
+    if (anilistLocked && mode === "non-anilist") return;
     const current: SourceMode[] = draft.filters.sourceModes?.length ? draft.filters.sourceModes : ["anilist", "non-anilist"];
     const next = current.includes(mode) ? current.filter((item) => item !== mode) : [...current, mode];
     const normalized: SourceMode[] = next.length > 0 ? next : [mode];
@@ -867,6 +892,13 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
       sourceMode: normalized.length === 2 ? "mixed" : normalized[0],
     });
   };
+
+  useEffect(() => {
+    if (!anilistLocked) return;
+    if (draft.filters.sourceMode !== "anilist" || draft.filters.sourceModes?.some((mode) => mode !== "anilist")) {
+      updateFilters({ sourceMode: "anilist", sourceModes: ["anilist"] });
+    }
+  }, [anilistLocked, draft.filters.sourceMode, draft.filters.sourceModes]);
   const cycleTag = (tagId: number) => {
     const include = draft.filters.includeTagIds.includes(tagId);
     const exclude = draft.filters.excludeTagIds.includes(tagId);
@@ -912,12 +944,16 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
               className={`segment ${draft.filters.sourceModes?.includes(mode) ? "active" : ""}`}
               type="button"
               key={mode}
+              disabled={anilistLocked && mode === "non-anilist"}
               onClick={() => toggleSourceMode(mode)}
             >
               {mode === "anilist" ? "AniList" : "Non-AniList"}
             </button>
           ))}
         </div>
+        {anilistLocked && (
+          <p className="muted tiny">AniList-only is locked because this feed uses AniList stats in sorting, ranges, or cover stats.</p>
+        )}
       </div>
 
       <div className="field">
@@ -934,7 +970,7 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
             </button>
           ))}
         </div>
-        <p className="muted tiny">Sensitive BL, GL, Smut, Hentai, and child tags stay excluded by default until included in Tags.</p>
+        <p className="muted tiny">Default sensitive exclusions apply only to exact BL, GL, Smut, and Hentai tags.</p>
       </div>
 
       <div className="field">
@@ -1787,7 +1823,7 @@ function SettingsPage() {
         <Link className="button" to="/learn">
           <Info size={16} /> Learn metrics and data
         </Link>
-        <SharePanelButton payload={{ kind: "settings", version: 1, settings: store.settings }} label="Share settings" />
+        <SharePanelButton payload={{ kind: "settings", version: 2, settings: store.settings }} label="Share settings" />
         <button
           className="button"
           type="button"
@@ -2080,7 +2116,7 @@ function LearnPage() {
           Cover stat slots show at most three metrics. Fan% is the default rank signal, with Pop and Fav beside it for context.
         </LearnItem>
         <LearnItem title="Safe Defaults">
-          Safe and suggestive content are enabled by default. BL, GL, Smut, Hentai, and their child tags are excluded unless a feed explicitly includes those tags.
+          Safe and suggestive content are enabled by default. BL, GL, Smut, and Hentai are exact-tag exclusions unless a feed explicitly includes them.
         </LearnItem>
         <LearnItem title="Offline And Sharing">
           Catalog, tags, history, feeds, settings, and opened details are cached locally. Share links contain compressed
@@ -2130,8 +2166,10 @@ function ImportPage() {
     const previousTitle = document.title;
     const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     const previousDescription = description?.content;
-    document.title = `${payload.feed.name} · Manhwa Lib`;
-    if (description) description.content = `Add the ${payload.feed.name} feed to Manhwa Lib.`;
+    document.title = payload.feed.name;
+    if (description) description.content = payload.feed.showDescription && payload.feed.description.trim()
+      ? payload.feed.description.trim()
+      : `Add the ${payload.feed.name} feed.`;
     return () => {
       document.title = previousTitle;
       if (description && previousDescription) description.content = previousDescription;
@@ -2156,7 +2194,13 @@ function ImportPage() {
         <div className="empty-state">
           <Import size={28} />
           <strong>{payload.kind === "feed" ? payload.feed.name : `${payload.kind} share`}</strong>
-          <span className="muted">{payload.kind === "feed" ? "Review this feed before adding it to your library." : "Review before applying this shared configuration."}</span>
+          <span className="muted">
+            {payload.kind === "feed" && payload.feed.showDescription && payload.feed.description.trim()
+              ? payload.feed.description.trim()
+              : payload.kind === "feed"
+                ? "Review this feed before adding it to your library."
+                : "Review before applying this shared configuration."}
+          </span>
           <div className="toolbar">
             <button className="button primary" type="button" onClick={() => apply("merge")}>
               Add
@@ -2193,9 +2237,10 @@ function SharePanelButton({ payload, label = "Share" }: { payload: SharePayload;
 function SharePanel({ payload }: { payload: SharePayload }) {
   const url = useMemo(() => makeShareUrl(payload), [payload]);
   const title = payload.kind === "feed" ? payload.feed.name : "Manhwa Lib configuration";
+  const description = payload.kind === "feed" && payload.feed.showDescription ? payload.feed.description.trim() : "";
   const share = async () => {
     if (navigator.share) {
-      await navigator.share({ title, text: `${title} · Manhwa Lib`, url });
+      await navigator.share({ title, text: description ? `${title}\n${description}` : title, url });
       return;
     }
     await navigator.clipboard.writeText(url);
@@ -2203,6 +2248,7 @@ function SharePanel({ payload }: { payload: SharePayload }) {
   return (
     <div>
       <h2 className="share-title">{title}</h2>
+      {description && <p className="muted">{description}</p>}
       <p className="muted">Same-domain compressed share link. No URL shortener, no tracker.</p>
       <textarea className="textarea" readOnly value={url} />
       <div className="toolbar">

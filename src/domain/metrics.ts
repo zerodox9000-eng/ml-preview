@@ -50,6 +50,28 @@ function closestHistory(entries: HistoryMap[string], targetDate: string, directi
   return direction === "before" ? filtered.at(-1) : filtered[0];
 }
 
+function datePart(value?: string | null) {
+  return value?.slice(0, 10) ?? null;
+}
+
+export function effectiveReleaseDate(series: SeriesCatalog) {
+  const published = series.published;
+  const actual = published?.start_date && !published.start_date_is_estimated ? published.start_date : null;
+  const fallback =
+    datePart(series.first_seen_at) ??
+    datePart(series.created_at) ??
+    datePart(series.added_at) ??
+    datePart(series.last_updated_at);
+  const date = actual ?? fallback ?? published?.start_date ?? null;
+  return date && !isFutureDate(date) ? date : null;
+}
+
+export function effectiveEndDate(series: SeriesCatalog) {
+  const published = series.published;
+  if (!published?.end_date || published.end_date_is_estimated) return null;
+  return isFutureDate(published.end_date) ? null : published.end_date;
+}
+
 export function historyDeltaForWindow(seriesId: number, metric: MetricId, history: HistoryMap, from: string, to: string) {
   const entries = history[String(seriesId)] ?? [];
   const start = closestHistory(entries, from, "after");
@@ -86,12 +108,12 @@ export function metricValue(series: SeriesCatalog, metric: MetricId, history: Hi
   if (metric === "fanFavouriteDiscoveryScore") return analytics.fanFavouriteDiscoveryScore ?? -Infinity;
   if (metric === "fanFavouriteDiscoveryPercentile") return analytics.fanFavouriteDiscoveryPercentile ?? -Infinity;
   if (metric === "releaseDate") {
-    const date = series.published?.start_date;
-    return isFutureDate(date) ? -Infinity : parseDate(date)?.getTime() ?? -Infinity;
+    const date = effectiveReleaseDate(series);
+    return parseDate(date)?.getTime() ?? -Infinity;
   }
   if (metric === "endDate") {
-    const date = series.published?.end_date;
-    return isFutureDate(date) ? -Infinity : parseDate(date)?.getTime() ?? -Infinity;
+    const date = effectiveEndDate(series);
+    return parseDate(date)?.getTime() ?? -Infinity;
   }
 
   const entries = history[String(series.id)] ?? [];
@@ -133,8 +155,7 @@ export function formatMetricValue(series: SeriesCatalog, metric: MetricId, histo
     return Number(value).toFixed(metric === "meanScore" ? 0 : 1);
   }
   if (metric === "releaseDate" || metric === "endDate") {
-    const raw = metric === "releaseDate" ? series.published?.start_date : series.published?.end_date;
-    if (isFutureDate(raw)) return "n/a";
+    const raw = metric === "releaseDate" ? effectiveReleaseDate(series) : effectiveEndDate(series);
     return raw ?? "n/a";
   }
   if (metric === "year") return String(Math.trunc(Number(value)));

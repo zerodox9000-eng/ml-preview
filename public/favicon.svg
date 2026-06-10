@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Manhwa Lib">
-  <rect width="64" height="64" rx="16" fill="#ff006e"/>
-  <rect x="9" y="8" width="46" height="48" rx="8" fill="#111218"/>
-  <rect x="15" y="15" width="34" height="34" fill="#f6f7fb"/>
-  <path d="M19 43V21h6l7 10 7-10h6v22h-6V31l-5 7h-4l-5-7v12h-6Z" fill="#111218"/>
-  <rect x="20" y="46" width="24" height="3" rx="1.5" fill="#ff006e"/>
+  <circle cx="32" cy="32" r="31" fill="#ff006e"/>
+  <circle cx="32" cy="32" r="25" fill="#101117"/>
+  <rect x="17" y="13" width="30" height="38" rx="4" fill="#f7f8ff"/>
+  <path d="M22 43V21h6l4 7 4-7h6v22h-6V30l-3 6h-3l-3-6v13h-5Z" fill="#111218"/>
+  <path d="M22 47h20" stroke="#ff006e" stroke-width="3" stroke-linecap="round"/>
 </svg>
