@@ -350,7 +350,7 @@ export function normalizeCatalog(
       display_title: resolveDisplayTitle(merged),
       first_seen_at: firstSeen,
       published,
-      year: published.start_date ? Number(published.start_date.slice(0, 4)) : merged.year,
+      year: hasActualStartDate ? Number(published.start_date!.slice(0, 4)) : merged.year,
     };
     normalizedHistory[String(canonical.id)] = entries;
     return canonical;

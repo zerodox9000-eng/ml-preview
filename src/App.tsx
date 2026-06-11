@@ -1572,6 +1572,12 @@ function RecommendationsPage() {
 
 function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, store: ReturnType<typeof useAppStore>) {
   const baseTags = new Set(base.tag_ids);
+  const tagsById = new Map(store.tags.map((tag) => [tag.id, tag]));
+  const baseGenreIds = base.tag_ids.filter((id) => {
+    const tag = tagsById.get(id);
+    return tag ? isGenreTag(tag) : false;
+  });
+  const baseChildTagIds = base.tag_ids.filter((id) => !baseGenreIds.includes(id));
   const filterFeed = createFeed(shelf.name);
   filterFeed.filters.sourceModes = shelf.sourceModes;
   filterFeed.filters.sourceMode = shelf.sourceModes.length === 2 ? "mixed" : shelf.sourceModes[0];
@@ -1588,15 +1594,29 @@ function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, st
     metaHistoryLast: store.syncMeta?.historyLastDate,
   }).items.filter((item) => item.id !== base.id);
   return pool
-    .map((item) => ({ item, tagScore: item.tag_ids.filter((id) => baseTags.has(id)).length }))
-    .filter(({ item, tagScore }) => {
-      if (tagScore === 0) return false;
+    .map((item) => {
+      const itemTagSet = new Set(item.tag_ids);
+      const sharedGenres = baseGenreIds.filter((id) => itemTagSet.has(id)).length;
+      const genrePercent = baseGenreIds.length ? sharedGenres / baseGenreIds.length : 0;
+      const childScore = baseChildTagIds.reduce((score, id) => {
+        if (!itemTagSet.has(id)) return score;
+        const level = tagsById.get(id)?.level ?? 3;
+        return score + 1 / Math.max(level, 1);
+      }, 0);
+      const totalTagMatches = item.tag_ids.filter((id) => baseTags.has(id)).length;
+      return { item, genrePercent, childScore, totalTagMatches };
+    })
+    .filter(({ item, genrePercent, childScore, totalTagMatches }) => {
+      if (baseGenreIds.length > 0 && genrePercent === 0) return false;
+      if (totalTagMatches === 0 && childScore === 0) return false;
       if (shelf.statusMode === "completed" && item.status !== "completed") return false;
       if (shelf.statusMode === "ongoing" && item.status === "completed") return false;
       return true;
     })
     .sort((a, b) => {
-      if (a.tagScore !== b.tagScore) return b.tagScore - a.tagScore;
+      if (a.genrePercent !== b.genrePercent) return b.genrePercent - a.genrePercent;
+      if (a.childScore !== b.childScore) return b.childScore - a.childScore;
+      if (a.totalTagMatches !== b.totalTagMatches) return b.totalTagMatches - a.totalTagMatches;
       for (const rule of shelf.sort) {
         const av = metricValue(a.item, rule.metric, store.history, store.syncMeta?.historyLastDate);
         const bv = metricValue(b.item, rule.metric, store.history, store.syncMeta?.historyLastDate);

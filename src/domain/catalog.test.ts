@@ -51,7 +51,7 @@ describe("catalog normalization", () => {
   it("uses first database history date for estimated releases", () => {
     const normalized = normalizeCatalog([base], history);
     expect(normalized.catalog[0].published?.start_date).toBe("2026-05-20");
-    expect(normalized.catalog[0].year).toBe(2026);
+    expect(normalized.catalog[0].year).toBeNull();
   });
 
   it("does not turn the global history start into every old title release date", () => {
@@ -79,6 +79,19 @@ describe("catalog normalization", () => {
     const normalized = normalizeCatalog([actual], {});
     expect(normalized.catalog[0].published?.start_date).toBe("2021-08-05");
     expect(normalized.catalog[0].year).toBe(2021);
+  });
+
+  it("does not overwrite catalog year with estimated first-seen release date", () => {
+    const estimated = {
+      ...base,
+      id: 66,
+      year: 2024,
+      first_seen_at: "2026-06-10T00:00:00.000Z",
+      published: { start_date: "2026-01-01", end_date: null, start_date_is_estimated: true },
+    };
+    const normalized = normalizeCatalog([estimated], {});
+    expect(normalized.catalog[0].published?.start_date).toBe("2026-06-10");
+    expect(normalized.catalog[0].year).toBe(2024);
   });
 
   it("derives a usable title from source slugs when the backend title is a placeholder", () => {
