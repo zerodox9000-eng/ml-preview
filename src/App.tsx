@@ -1573,11 +1573,12 @@ function RecommendationsPage() {
 function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, store: ReturnType<typeof useAppStore>) {
   const baseTags = new Set(base.tag_ids);
   const tagsById = new Map(store.tags.map((tag) => [tag.id, tag]));
+  const tagDocumentCounts = buildTagDocumentCounts(store.catalog);
   const baseGenreIds = base.tag_ids.filter((id) => {
     const tag = tagsById.get(id);
     return tag ? isGenreTag(tag) : false;
   });
-  const baseChildTagIds = base.tag_ids.filter((id) => !baseGenreIds.includes(id));
+  const baseVector = buildRecommendationVector(base, tagsById, tagDocumentCounts, store.catalog.length);
   const filterFeed = createFeed(shelf.name);
   filterFeed.filters.sourceModes = shelf.sourceModes;
   filterFeed.filters.sourceMode = shelf.sourceModes.length === 2 ? "mixed" : shelf.sourceModes[0];
@@ -1598,24 +1599,21 @@ function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, st
       const itemTagSet = new Set(item.tag_ids);
       const sharedGenres = baseGenreIds.filter((id) => itemTagSet.has(id)).length;
       const genrePercent = baseGenreIds.length ? sharedGenres / baseGenreIds.length : 0;
-      const childScore = baseChildTagIds.reduce((score, id) => {
-        if (!itemTagSet.has(id)) return score;
-        const level = tagsById.get(id)?.level ?? 3;
-        return score + 1 / Math.max(level, 1);
-      }, 0);
+      const candidateVector = buildRecommendationVector(item, tagsById, tagDocumentCounts, store.catalog.length);
+      const similarity = cosineSimilarity(baseVector, candidateVector);
       const totalTagMatches = item.tag_ids.filter((id) => baseTags.has(id)).length;
-      return { item, genrePercent, childScore, totalTagMatches };
+      return { item, genrePercent, sharedGenres, similarity, totalTagMatches };
     })
-    .filter(({ item, genrePercent, childScore, totalTagMatches }) => {
-      if (baseGenreIds.length > 0 && genrePercent < 1) return false;
-      if (totalTagMatches === 0 && childScore === 0) return false;
+    .filter(({ item, sharedGenres, similarity, totalTagMatches }) => {
+      if (baseGenreIds.length > 0 && sharedGenres === 0) return false;
+      if (similarity < 0.08 && totalTagMatches === 0) return false;
       if (shelf.statusMode === "completed" && item.status !== "completed") return false;
       if (shelf.statusMode === "ongoing" && item.status === "completed") return false;
       return true;
     })
     .sort((a, b) => {
+      if (Math.abs(a.similarity - b.similarity) > 0.0001) return b.similarity - a.similarity;
       if (a.genrePercent !== b.genrePercent) return b.genrePercent - a.genrePercent;
-      if (a.childScore !== b.childScore) return b.childScore - a.childScore;
       if (a.totalTagMatches !== b.totalTagMatches) return b.totalTagMatches - a.totalTagMatches;
       for (const rule of shelf.sort) {
         const av = metricValue(a.item, rule.metric, store.history, store.syncMeta?.historyLastDate);
@@ -1640,6 +1638,59 @@ function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, st
     .map(({ item }) => item);
 }
 
+function buildTagDocumentCounts(catalog: SeriesCatalog[]) {
+  const counts = new Map<number, number>();
+  for (const item of catalog) {
+    for (const tagId of new Set(item.tag_ids)) {
+      counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function recommendationTagIdf(tagId: number, counts: Map<number, number>, totalItems: number) {
+  return Math.log((totalItems + 1) / ((counts.get(tagId) ?? 0) + 1)) + 1;
+}
+
+function addVectorWeight(vector: Map<string, number>, key: string, weight: number) {
+  vector.set(key, (vector.get(key) ?? 0) + weight);
+}
+
+function buildRecommendationVector(
+  series: SeriesCatalog,
+  tagsById: Map<number, TagNode>,
+  tagDocumentCounts: Map<number, number>,
+  totalItems: number,
+) {
+  const vector = new Map<string, number>();
+  for (const tagId of series.tag_ids) {
+    const tag = tagsById.get(tagId);
+    if (!tag) continue;
+    const idf = recommendationTagIdf(tagId, tagDocumentCounts, totalItems);
+    const genre = isGenreTag(tag);
+    const level = Math.max(tag.level ?? 1, 1);
+    const exactWeight = (genre ? 3.2 : 1.45 / Math.sqrt(level)) * idf;
+    addVectorWeight(vector, `tag:${tagId}`, exactWeight);
+
+    const pathParts = tag.path.split(" > ").filter(Boolean);
+    const parentKey = tag.parent_id != null ? `parent:${tag.parent_id}` : pathParts.slice(0, -1).join(" > ");
+    if (!genre && parentKey) addVectorWeight(vector, `ctx:${parentKey}`, 0.42 * idf);
+    if (pathParts[0]) addVectorWeight(vector, `root:${pathParts[0]}`, genre ? 0.32 : 0.16);
+  }
+  return vector;
+}
+
+function cosineSimilarity(left: Map<string, number>, right: Map<string, number>) {
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (const value of left.values()) leftNorm += value * value;
+  for (const value of right.values()) rightNorm += value * value;
+  for (const [key, value] of left) dot += value * (right.get(key) ?? 0);
+  if (leftNorm === 0 || rightNorm === 0) return 0;
+  return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+}
+
 function RecommendationShelfEditor({
   shelf,
   onSave,
@@ -1657,7 +1708,7 @@ function RecommendationShelfEditor({
         statusMode: "any",
         dateMode: "any",
         sourceModes: ["anilist", "non-anilist"],
-        sort: [{ id: crypto.randomUUID(), metric: "fanFavouriteRaw", direction: "desc" }],
+        sort: [{ id: crypto.randomUUID(), metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
         metricRanges: [],
       },
   );
@@ -1701,7 +1752,7 @@ function RecommendationShelfEditor({
             onClick={() =>
               setDraft({
                 ...draft,
-                sort: [...draft.sort, { id: crypto.randomUUID(), metric: "fanFavouriteRaw", direction: "desc" }],
+                sort: [...draft.sort, { id: crypto.randomUUID(), metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
               })
             }
           >

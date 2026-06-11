@@ -114,7 +114,7 @@ export const DEFAULT_RECOMMENDATION_SHELVES: RecommendationShelf[] = [
     statusMode: "any",
     dateMode: "any",
     sourceModes: ["anilist"],
-    sort: [{ id: "rec-fan", metric: "fanFavouriteRaw", direction: "desc" }],
+    sort: [{ id: "rec-discpct", metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
     metricRanges: [
       { id: "rec-min-pop", metric: "popularity", min: 500, max: null },
       { id: "rec-min-fan", metric: "fanFavouriteRaw", min: 2, max: null },
