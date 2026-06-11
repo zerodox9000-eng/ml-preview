@@ -273,6 +273,33 @@ describe("runFeedQuery", () => {
     expect(result.items.map((item) => item.id)).toEqual([91, 92]);
   });
 
+  it("matches MangaBaka safe latest by applying local safety and exact tag filters after rank order", () => {
+    const feed = createFeed("MangaBaka safe latest");
+    feed.filters.sourceMode = "mixed";
+    feed.filters.sourceModes = ["anilist", "non-anilist"];
+    feed.filters.contentRatings = ["safe"];
+    feed.filters.excludeTagIds = [4, 180, 41, 10];
+    feed.filters.includeEstimatedDates = true;
+    feed.sort = [{ id: "mb", metric: "mangabakaLatestRank", direction: "asc" }];
+    feed.view.metricSlots = ["mangabakaLatestRank"];
+    const result = runFeedQuery({
+      feed,
+      series: [
+        { ...baseSeries[0], id: 100, display_title: "Safe rank two", content_rating: "safe", tag_ids: [1], mangabaka_latest_rank: 2 },
+        { ...baseSeries[0], id: 101, display_title: "Suggestive rank one", content_rating: "suggestive", tag_ids: [1], mangabaka_latest_rank: 1 },
+        { ...baseSeries[0], id: 102, display_title: "BL exact rank three", content_rating: "safe", tag_ids: [180], mangabaka_latest_rank: 3 },
+        { ...baseSeries[0], id: 103, display_title: "Safe rank four", content_rating: "safe", tag_ids: [1], mangabaka_latest_rank: 4 },
+      ],
+      tags,
+      history,
+      labels: [],
+      settings: { ...DEFAULT_SETTINGS, nonAniListPlacement: "mixed" },
+      metaHistoryFirst: null,
+      metaHistoryLast: null,
+    });
+    expect(result.items.map((item) => item.id)).toEqual([100, 103]);
+  });
+
   it("keeps future release dates inactive for sorting and rolling filters", () => {
     const feed = createFeed("future release");
     feed.filters.sourceMode = "mixed";

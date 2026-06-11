@@ -870,6 +870,38 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
     });
   };
 
+  const applyLatestBasis = (basis: "release" | "mangabaka") => {
+    if (basis === "mangabaka") {
+      setDraft((current) => ({
+        ...current,
+        filters: {
+          ...current.filters,
+          dateField: "none",
+          includeEstimatedDates: true,
+        },
+        sort: [{ id: crypto.randomUUID(), metric: "mangabakaLatestRank", direction: "asc" }],
+        view: {
+          ...current.view,
+          metricSlots: ["mangabakaLatestRank"],
+        },
+      }));
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      filters: {
+        ...current.filters,
+        dateField: "none",
+        includeEstimatedDates: true,
+      },
+      sort: [{ id: crypto.randomUUID(), metric: "releaseDate", direction: "desc" }],
+      view: {
+        ...current.view,
+        metricSlots: ["releaseDate"],
+      },
+    }));
+  };
+
   useEffect(() => {
     if (!anilistLocked) return;
     if (draft.filters.sourceMode !== "anilist" || draft.filters.sourceModes?.some((mode) => mode !== "anilist")) {
@@ -956,6 +988,27 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
         value={draft.filters.includeEstimatedDates ?? true}
         onChange={(includeEstimatedDates) => updateFilters({ includeEstimatedDates })}
       />
+
+      <div className="field">
+        <span className="small-label">Latest basis</span>
+        <div className="segmented">
+          <button
+            className={`segment ${draft.sort[0]?.metric === "releaseDate" ? "active" : ""}`}
+            type="button"
+            onClick={() => applyLatestBasis("release")}
+          >
+            Release date
+          </button>
+          <button
+            className={`segment ${draft.sort[0]?.metric === "mangabakaLatestRank" ? "active" : ""}`}
+            type="button"
+            onClick={() => applyLatestBasis("mangabaka")}
+          >
+            MangaBaka latest
+          </button>
+        </div>
+        <p className="muted tiny">MangaBaka latest matches the site&apos;s latest-added order after this feed&apos;s type, rating, source, and tag filters are applied.</p>
+      </div>
 
       <div className="field">
         <span className="small-label">Statuses</span>
