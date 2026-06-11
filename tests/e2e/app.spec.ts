@@ -36,7 +36,7 @@ async function mockBackendData(page: Page) {
       status: "releasing",
       content_rating: "suggestive",
       total_chapters: "102",
-      tag_ids: [1],
+      tag_ids: [1, 2],
       stats: { popularity: 999, favourites: 35, meanScore: 69 },
       analytics: { fanFavouriteRaw: 3.5035, fanFavouriteDiscoveryScore: 89.7064 },
       published: { start_date: "2023-12-24", end_date: null },

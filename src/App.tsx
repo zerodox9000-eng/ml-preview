@@ -1607,7 +1607,7 @@ function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, st
       return { item, genrePercent, childScore, totalTagMatches };
     })
     .filter(({ item, genrePercent, childScore, totalTagMatches }) => {
-      if (baseGenreIds.length > 0 && genrePercent === 0) return false;
+      if (baseGenreIds.length > 0 && genrePercent < 1) return false;
       if (totalTagMatches === 0 && childScore === 0) return false;
       if (shelf.statusMode === "completed" && item.status !== "completed") return false;
       if (shelf.statusMode === "ongoing" && item.status === "completed") return false;

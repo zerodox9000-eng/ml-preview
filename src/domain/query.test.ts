@@ -66,8 +66,9 @@ const history: HistoryMap = {
 };
 
 describe("runFeedQuery", () => {
-  it("hides sensitive tags unless adult content is unlocked", () => {
+  it("hides default exact sensitive parent tags only while they are excluded", () => {
     const feed = createFeed("safe");
+    feed.filters.excludeTagIds = [2];
     const result = runFeedQuery({
       feed,
       series: baseSeries,
@@ -79,6 +80,25 @@ describe("runFeedQuery", () => {
       metaHistoryLast: "2024-05-10",
     });
     expect(result.items.map((item) => item.id)).toEqual([1]);
+  });
+
+  it("treats removed default sensitive exclusions as neutral when adult ratings are selected", () => {
+    const feed = createFeed("adult neutral tags");
+    feed.filters.contentRatings = ["safe", "suggestive", "erotica", "pornographic"];
+    feed.filters.excludeTagIds = [];
+    const result = runFeedQuery({
+      feed,
+      series: [
+        { ...baseSeries[1], id: 45, display_title: "Neutral Hentai tag", content_rating: "pornographic", tag_ids: [2] },
+      ],
+      tags,
+      history,
+      labels: [],
+      settings: DEFAULT_SETTINGS,
+      metaHistoryFirst: "2024-05-01",
+      metaHistoryLast: "2024-05-10",
+    });
+    expect(result.items.map((item) => item.id)).toEqual([45]);
   });
 
   it("does not hide child-only tags when a sensitive parent is excluded", () => {

@@ -138,7 +138,6 @@ export function runFeedQuery(args: {
   const { feed, series, tags, history, labels, settings, metaHistoryFirst, metaHistoryLast } = args;
   const filters = feed.filters;
   const tagsById = new Map(tags.map((tag) => [tag.id, tag]));
-  const sensitiveTagIds = buildSensitiveTagSet(tags);
   const includeTagGroups = filters.includeTagIds.map((id) => [id]);
   const includeTagIds = [...new Set(filters.includeTagIds)];
   const excludeTagIds = filters.excludeTagIds;
@@ -180,9 +179,6 @@ export function runFeedQuery(args: {
   const result = candidates.filter((item) => {
     const rating = item.content_rating as AppSettings["contentRatings"][number] | null;
     if (rating && !filters.contentRatings.includes(rating)) return false;
-    const hasSensitive = item.tag_ids.some((id) => sensitiveTagIds.has(id));
-    const hasIncludedSensitive = includeTagIds.some((id) => sensitiveTagIds.has(id));
-    if (hasSensitive && !hasIncludedSensitive) return false;
 
     const ani = hasAniList(item);
     const sourceModes = effectiveSourceModesForFeed(feed);
