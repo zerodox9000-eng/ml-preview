@@ -1742,6 +1742,8 @@ function buildRecommendationProfile(series: SeriesCatalog, tagsById: Map<number,
     if (tagMatches(tag, /dungeon|tower|level system|system administrator|game world|virtual reality|video game|rpg|hunter|ranker/)) groups.add("game-system");
     if (tagMatches(tag, /european ambience|medieval european|nobility|royalty|duke|prince|princess|emperor|villainess|otome|kingdom|castle/)) groups.add("euro-fantasy");
     if (tagMatches(tag, /office|company|ceo|director|secretary|coworker|business|economics|merchant|workplace|working/)) groups.add("workplace");
+    if (tagMatches(tag, /business|economics|merchant|company|ceo|director|politic|working|office worker|time rewind|time travel|time manipulation|age regression|second chance|reincarnation|revenge|betrayal|murder|smart protagonist/)) groups.add("business-strategy");
+    if (tagMatches(tag, /office romance|workplace romance|coworker relationships|secret relationship|dating|adult couple|marriage|one-night stand|pregnancy|male lead falls in love|love triangle|mature romance|romance/)) groups.add("romance-core");
     if (tagMatches(tag, /showbiz|entertainment industry|actor|actress|idol|celebrity|manager/)) groups.add("showbiz");
     if (tagMatches(tag, /pregnancy|parent|family life|childcare|childhood friends|cohabitation|marriage|married couple|adult couple|one-night stand/)) groups.add("family-romance");
     if (tagMatches(tag, /school|high school|college|teacher|student|academy/)) groups.add("school");
@@ -1753,19 +1755,21 @@ function buildRecommendationProfile(series: SeriesCatalog, tagsById: Map<number,
 
   const requiredGroups = new Set<string>();
   for (const group of groups) {
-    if (["horror", "martial", "game-system", "euro-fantasy", "workplace", "showbiz", "sports", "medical", "food"].includes(group)) {
+    if (["horror", "martial", "game-system", "euro-fantasy", "showbiz", "sports", "medical", "food"].includes(group)) {
       requiredGroups.add(group);
     }
   }
-  if (groups.has("workplace") && groups.has("family-romance")) requiredGroups.add("modern-romance");
+  if (groups.has("business-strategy") && !groups.has("romance-core")) requiredGroups.add("business-strategy");
+  if (groups.has("workplace") && groups.has("romance-core")) requiredGroups.add("modern-romance");
   if (groups.has("school") && groups.has("family-romance")) requiredGroups.add("school-romance");
   if (groups.has("crime-action") && !groups.has("family-romance")) requiredGroups.add("crime-action");
 
   return {
     groups,
     requiredGroups,
-    modernRomance: groups.has("family-romance") && (groups.has("workplace") || groups.has("school") || groups.has("showbiz")),
-    romanticCore: groups.has("family-romance") || groups.has("workplace") || groups.has("showbiz"),
+    businessStrategy: groups.has("business-strategy") && !groups.has("romance-core"),
+    modernRomance: groups.has("romance-core") && (groups.has("workplace") || groups.has("school") || groups.has("showbiz")),
+    romanticCore: groups.has("romance-core") || groups.has("family-romance"),
   };
 }
 
@@ -1787,6 +1791,8 @@ function isRecommendationProfileCompatible(
   }
 
   if (base.groups.has("workplace") && candidate.groups.has("martial")) return false;
+  if (base.businessStrategy && candidate.romanticCore && !candidate.groups.has("business-strategy")) return false;
+  if (base.businessStrategy && hasAnyGroup(candidate, ["martial", "game-system", "euro-fantasy"]) && !candidate.groups.has("business-strategy")) return false;
   if (base.groups.has("horror") && candidate.romanticCore && !candidate.groups.has("horror")) return false;
   if (base.modernRomance && hasAnyGroup(candidate, ["martial", "game-system", "euro-fantasy", "horror"])) return false;
   return true;
