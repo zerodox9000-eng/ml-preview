@@ -237,10 +237,11 @@ export function runFeedQuery(args: {
     return true;
   });
 
+  const usesLatestAddedSort = feed.sort.some((rule) => rule.metric === "mangabakaLatestRank");
   const sorted = [...result].sort((a, b) => {
     const aAni = hasAniList(a);
     const bAni = hasAniList(b);
-    if ((filters.sourceModes?.length ?? 0) > 1 && aAni !== bAni && settings.nonAniListPlacement !== "mixed") {
+    if (!usesLatestAddedSort && (filters.sourceModes?.length ?? 0) > 1 && aAni !== bAni && settings.nonAniListPlacement !== "mixed") {
       return settings.nonAniListPlacement === "top" ? (aAni ? 1 : -1) : aAni ? -1 : 1;
     }
 

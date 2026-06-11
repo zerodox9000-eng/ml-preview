@@ -267,7 +267,7 @@ describe("runFeedQuery", () => {
       tags,
       history,
       labels: [],
-      settings: { ...DEFAULT_SETTINGS, nonAniListPlacement: "mixed" },
+      settings: { ...DEFAULT_SETTINGS, nonAniListPlacement: "bottom" },
       metaHistoryFirst: null,
       metaHistoryLast: null,
     });
