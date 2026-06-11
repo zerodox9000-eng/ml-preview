@@ -89,6 +89,19 @@ export interface TagNode {
   level: number;
 }
 
+export interface RecommendationFeature {
+  id: number;
+  profileGroups: string[];
+  primaryAnchors: string[];
+  tagFeatures: Record<string, number>;
+  textFeatures: Record<string, number>;
+  quality: {
+    discPct: number | null;
+    fanPct: number | null;
+    popularity: number | null;
+  };
+}
+
 export interface HistoryEntry {
   d: string;
   p: number;

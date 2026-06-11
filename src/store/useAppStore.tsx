@@ -8,6 +8,7 @@ import type {
   Feed,
   Folder,
   HistoryMap,
+  RecommendationFeature,
   SeriesCatalog,
   SyncMeta,
   TagNode,
@@ -23,6 +24,7 @@ interface StoreState {
   catalog: SeriesCatalog[];
   tags: TagNode[];
   history: HistoryMap;
+  recommendationFeatures: RecommendationFeature[];
   syncMeta: SyncMeta | null;
   feeds: Feed[];
   folders: Folder[];
@@ -157,6 +159,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [catalog, setCatalog] = useState<SeriesCatalog[]>([]);
   const [tags, setTags] = useState<TagNode[]>([]);
   const [history, setHistory] = useState<HistoryMap>({});
+  const [recommendationFeatures, setRecommendationFeatures] = useState<RecommendationFeature[]>([]);
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
   const [feeds, setFeeds] = useState<Feed[]>(
     (hasSavedState ? local.feeds ?? [] : (defaultFeedsJson as Feed[])).map((feed) => normalizeFeed(feed)),
@@ -169,13 +172,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const [{ catalog: cachedCatalog, tags: cachedTags, history: cachedHistory }, meta] = await Promise.all([
+      const [{ catalog: cachedCatalog, tags: cachedTags, history: cachedHistory, recommendationFeatures: cachedRecommendationFeatures }, meta] = await Promise.all([
         loadCachedData(),
         loadSyncMeta(),
       ]);
       setCatalog(cachedCatalog);
       setTags(cachedTags);
       setHistory(cachedHistory);
+      setRecommendationFeatures(cachedRecommendationFeatures);
       setSyncMeta(meta);
       if (cachedCatalog.length === 0) {
         const bundledCatalog = await loadBundledCatalog();
@@ -221,6 +225,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setCatalog(synced.catalog);
       setTags(synced.tags);
       setHistory(synced.history);
+      setRecommendationFeatures(synced.recommendationFeatures);
       setSyncMeta(synced.meta);
       setSettings((current) => ({ ...current, dataSourceUrl: synced.meta.source }));
       setSyncStatus("Sync complete");
@@ -311,6 +316,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       catalog,
       tags,
       history,
+      recommendationFeatures,
       syncMeta,
       feeds,
       folders,
@@ -335,6 +341,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       catalog,
       tags,
       history,
+      recommendationFeatures,
       syncMeta,
       feeds,
       folders,

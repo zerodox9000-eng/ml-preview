@@ -37,9 +37,10 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { createFeed, DEFAULT_DETAIL_VISIBLE, DEFAULT_FILTERS, DEFAULT_SORT } from "./domain/defaults";
-import { isFutureDate, resolveRollingWindow } from "./domain/dates";
+import { resolveRollingWindow } from "./domain/dates";
 import { buildSensitiveTagGroups, feedUsesAniListOnlyParameters, isGenreTag, runFeedQuery, tagRoot } from "./domain/query";
-import { formatMetricValue, historyDeltaForWindow, METRIC_DEFINITIONS, metricDefinition, metricValue } from "./domain/metrics";
+import { formatMetricValue, historyDeltaForWindow, METRIC_DEFINITIONS, metricDefinition } from "./domain/metrics";
+import { rankRecommendations } from "./domain/recommendations";
 import { resolveDisplayTitle } from "./domain/catalog";
 import { decodeSharePayload, exportCsv, makeShareUrl, type SharePayload } from "./domain/share";
 import type {
@@ -1571,19 +1572,6 @@ function RecommendationsPage() {
 }
 
 function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, store: ReturnType<typeof useAppStore>) {
-  const baseTags = new Set(base.tag_ids);
-  const tagsById = new Map(store.tags.map((tag) => [tag.id, tag]));
-  const tagDocumentCounts = buildTagDocumentCounts(store.catalog);
-  const baseGenreIds = base.tag_ids.filter((id) => {
-    const tag = tagsById.get(id);
-    return tag ? isGenreTag(tag) : false;
-  });
-  const baseVector = buildRecommendationVector(base, tagsById, tagDocumentCounts, store.catalog.length);
-  const baseAnchors = base.tag_ids.filter((id) => {
-    const tag = tagsById.get(id);
-    return tag ? isRecommendationAnchor(tag, tagDocumentCounts, store.catalog.length) : false;
-  });
-  const baseProfile = buildRecommendationProfile(base, tagsById);
   const filterFeed = createFeed(shelf.name);
   filterFeed.filters.sourceModes = shelf.sourceModes;
   filterFeed.filters.sourceMode = shelf.sourceModes.length === 2 ? "mixed" : shelf.sourceModes[0];
@@ -1599,242 +1587,15 @@ function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, st
     metaHistoryFirst: store.syncMeta?.historyFirstDate,
     metaHistoryLast: store.syncMeta?.historyLastDate,
   }).items.filter((item) => item.id !== base.id);
-  return pool
-    .map((item) => {
-      const itemTagSet = new Set(item.tag_ids);
-      const sharedGenres = baseGenreIds.filter((id) => itemTagSet.has(id)).length;
-      const genrePercent = baseGenreIds.length ? sharedGenres / baseGenreIds.length : 0;
-      const candidateVector = buildRecommendationVector(item, tagsById, tagDocumentCounts, store.catalog.length);
-      const similarity = cosineSimilarity(baseVector, candidateVector);
-      const totalTagMatches = item.tag_ids.filter((id) => baseTags.has(id)).length;
-      const sharedAnchors = baseAnchors.filter((id) => itemTagSet.has(id)).length;
-      const profile = buildRecommendationProfile(item, tagsById);
-      const profileOverlap = countSetOverlap(baseProfile.requiredGroups, profile.groups);
-      return { item, genrePercent, profile, profileOverlap, sharedAnchors, sharedGenres, similarity, totalTagMatches };
-    })
-    .filter(({ item, profile, profileOverlap, sharedAnchors, sharedGenres, similarity, totalTagMatches }) => {
-      if (!isRecommendationProfileCompatible(baseProfile, profile, profileOverlap)) return false;
-      if (baseAnchors.length > 0 && sharedAnchors === 0) return false;
-      if (baseAnchors.length === 0 && baseGenreIds.length > 0 && sharedGenres === 0) return false;
-      if (similarity < 0.075 && totalTagMatches === 0) return false;
-      if (shelf.statusMode === "completed" && item.status !== "completed") return false;
-      if (shelf.statusMode === "ongoing" && item.status === "completed") return false;
-      return true;
-    })
-    .sort((a, b) => {
-      if (a.profileOverlap !== b.profileOverlap) return b.profileOverlap - a.profileOverlap;
-      if (a.sharedAnchors !== b.sharedAnchors) return b.sharedAnchors - a.sharedAnchors;
-      if (Math.abs(a.similarity - b.similarity) > 0.0001) return b.similarity - a.similarity;
-      if (a.genrePercent !== b.genrePercent) return b.genrePercent - a.genrePercent;
-      if (a.totalTagMatches !== b.totalTagMatches) return b.totalTagMatches - a.totalTagMatches;
-      for (const rule of shelf.sort) {
-        const av = metricValue(a.item, rule.metric, store.history, store.syncMeta?.historyLastDate);
-        const bv = metricValue(b.item, rule.metric, store.history, store.syncMeta?.historyLastDate);
-        const aMissing = typeof av !== "string" && (av === -Infinity || av == null || Number.isNaN(Number(av)));
-        const bMissing = typeof bv !== "string" && (bv === -Infinity || bv == null || Number.isNaN(Number(bv)));
-        if (aMissing || bMissing) {
-          if (aMissing && bMissing) continue;
-          return aMissing ? 1 : -1;
-        }
-        if (av === bv) continue;
-        const direction = rule.direction === "asc" ? 1 : -1;
-        return av > bv ? direction : -direction;
-      }
-      if (shelf.dateMode === "latest") {
-        const ad = isFutureDate(a.item.published?.start_date) ? "" : String(a.item.published?.start_date ?? "");
-        const bd = isFutureDate(b.item.published?.start_date) ? "" : String(b.item.published?.start_date ?? "");
-        return bd.localeCompare(ad);
-      }
-      return b.item.display_title.localeCompare(a.item.display_title);
-    })
-    .map(({ item }) => item);
-}
-
-function buildTagDocumentCounts(catalog: SeriesCatalog[]) {
-  const counts = new Map<number, number>();
-  for (const item of catalog) {
-    for (const tagId of new Set(item.tag_ids)) {
-      counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
-    }
-  }
-  return counts;
-}
-
-function recommendationTagIdf(tagId: number, counts: Map<number, number>, totalItems: number) {
-  return Math.log((totalItems + 1) / ((counts.get(tagId) ?? 0) + 1)) + 1;
-}
-
-function tagPathParts(tag: TagNode) {
-  return tag.path.split(" > ").filter(Boolean);
-}
-
-function normalizedTagName(tag: TagNode) {
-  return tag.name.trim().toLocaleLowerCase();
-}
-
-function recommendationTagWeight(tag: TagNode) {
-  const root = tagRoot(tag);
-  const name = normalizedTagName(tag);
-  const path = tag.path.toLocaleLowerCase();
-  const genre = isGenreTag(tag);
-  const level = Math.max(tag.level ?? 1, 1);
-
-  if (root === "Work Info") return 0.08;
-  if (root === "Derivative Work") return 0.12;
-  if (root === "Audience Demographics") return 0.22;
-  if (root === "Sexual Content") return genre ? 0.28 : 0.18;
-  if (root === "Character Traits") return 0.34 / Math.sqrt(level);
-  if (root === "Character Types") {
-    if (/(male lead|female lead|protagonist|cast)$/.test(name)) return 0.24;
-    return 0.58 / Math.sqrt(level - 0.5);
-  }
-  if (root === "Settings") {
-    if (name === "fantasy" || name === "supernatural" || name === "sci-fi") return 0.55;
-    if (/(tower|dungeon|level system|system|isekai|cultivation|murim|game|virtual reality|apocalypse|cyberpunk)/.test(path)) return 1.25 / Math.sqrt(level - 0.8);
-    return 0.72 / Math.sqrt(level - 0.8);
-  }
-  if (root === "Themes") {
-    if (name === "drama" || name === "romance" || name === "comedy" || name === "slice of life") return 0.48;
-    if (genre) return 2.15 / Math.sqrt(level - 0.7);
-    if (/(economics|business|office|workplace|horror|survival|revenge|politic|kingdom management|territory management|martial arts|murim|mystery|psychological|crime|sports)/.test(path)) {
-      return 1.9 / Math.sqrt(level - 0.8);
-    }
-    return 1.05 / Math.sqrt(level - 0.8);
-  }
-  if (root === "Occupations" || root === "Activities") return 1.75 / Math.sqrt(level - 0.8);
-  if (root === "Locations") {
-    if (/(school|south korea|europe|company|office|dungeon|tower|kingdom)/.test(path)) return 1.45 / Math.sqrt(level - 0.8);
-    return 1.1 / Math.sqrt(level - 0.8);
-  }
-  if (root === "Relationship") {
-    if (/(heterosexual|orientation)/.test(path)) return 0.22;
-    return 1.25 / Math.sqrt(level - 0.8);
-  }
-  if (root === "Narrative Tropes") return 1.35 / Math.sqrt(level - 0.8);
-  if (root === "World Building") return 1.45 / Math.sqrt(level - 0.8);
-  if (root === "Character Archetype") return 1.2 / Math.sqrt(level - 0.8);
-  return genre ? 1.25 : 0.9 / Math.sqrt(level);
-}
-
-function isRecommendationAnchor(tag: TagNode, counts: Map<number, number>, totalItems: number) {
-  const count = counts.get(tag.id) ?? 0;
-  const prevalence = totalItems > 0 ? count / totalItems : 1;
-  return recommendationTagWeight(tag) >= 1.15 && prevalence <= 0.25;
-}
-
-function countSetOverlap(left: Set<string>, right: Set<string>) {
-  let count = 0;
-  for (const value of left) if (right.has(value)) count += 1;
-  return count;
-}
-
-function tagMatches(tag: TagNode, pattern: RegExp) {
-  return pattern.test(`${tag.name} ${tag.path}`.toLocaleLowerCase());
-}
-
-function buildRecommendationProfile(series: SeriesCatalog, tagsById: Map<number, TagNode>) {
-  const groups = new Set<string>();
-  for (const tagId of series.tag_ids) {
-    const tag = tagsById.get(tagId);
-    if (!tag) continue;
-    if (tagMatches(tag, /horror|gore|death game|survival horror|ghost|zombie|monster|psychological horror/)) groups.add("horror");
-    if (tagMatches(tag, /martial arts|cultivation|wuxia|murim|swordplay|martial artist|swordsman|sect|ancient china|chinese ambience|chinese mythology/)) groups.add("martial");
-    if (tagMatches(tag, /dungeon|tower|level system|system administrator|game world|virtual reality|video game|rpg|hunter|ranker/)) groups.add("game-system");
-    if (tagMatches(tag, /european ambience|medieval european|nobility|royalty|duke|prince|princess|emperor|villainess|otome|kingdom|castle/)) groups.add("euro-fantasy");
-    if (tagMatches(tag, /office|company|ceo|director|secretary|coworker|business|economics|merchant|workplace|working/)) groups.add("workplace");
-    if (tagMatches(tag, /business|economics|merchant|company|ceo|director|politic|working|office worker|time rewind|time travel|time manipulation|age regression|second chance|reincarnation|revenge|betrayal|murder|smart protagonist/)) groups.add("business-strategy");
-    if (tagMatches(tag, /office romance|workplace romance|coworker relationships|secret relationship|dating|adult couple|marriage|one-night stand|pregnancy|male lead falls in love|love triangle|mature romance|romance/)) groups.add("romance-core");
-    if (tagMatches(tag, /showbiz|entertainment industry|actor|actress|idol|celebrity|manager/)) groups.add("showbiz");
-    if (tagMatches(tag, /pregnancy|parent|family life|childcare|childhood friends|cohabitation|marriage|married couple|adult couple|one-night stand/)) groups.add("family-romance");
-    if (tagMatches(tag, /school|high school|college|teacher|student|academy/)) groups.add("school");
-    if (tagMatches(tag, /sports|baseball|football|basketball|tennis|golf|badminton|athletics|boxing|wrestling|racing/)) groups.add("sports");
-    if (tagMatches(tag, /crime|mafia|gang|organized crime|murder|assassin|detective|police|revenge/)) groups.add("crime-action");
-    if (tagMatches(tag, /medical|doctor|hospital|nurse|surgery/)) groups.add("medical");
-    if (tagMatches(tag, /food|cooking|restaurant|gourmet|chef/)) groups.add("food");
-  }
-
-  const requiredGroups = new Set<string>();
-  for (const group of groups) {
-    if (["horror", "martial", "game-system", "euro-fantasy", "showbiz", "sports", "medical", "food"].includes(group)) {
-      requiredGroups.add(group);
-    }
-  }
-  if (groups.has("business-strategy") && !groups.has("romance-core")) requiredGroups.add("business-strategy");
-  if (groups.has("workplace") && groups.has("romance-core")) requiredGroups.add("modern-romance");
-  if (groups.has("school") && groups.has("family-romance")) requiredGroups.add("school-romance");
-  if (groups.has("crime-action") && !groups.has("family-romance")) requiredGroups.add("crime-action");
-
-  return {
-    groups,
-    requiredGroups,
-    businessStrategy: groups.has("business-strategy") && !groups.has("romance-core"),
-    modernRomance: groups.has("romance-core") && (groups.has("workplace") || groups.has("school") || groups.has("showbiz")),
-    romanticCore: groups.has("romance-core") || groups.has("family-romance"),
-  };
-}
-
-function hasAnyGroup(profile: ReturnType<typeof buildRecommendationProfile>, groups: string[]) {
-  return groups.some((group) => profile.groups.has(group));
-}
-
-function isRecommendationProfileCompatible(
-  base: ReturnType<typeof buildRecommendationProfile>,
-  candidate: ReturnType<typeof buildRecommendationProfile>,
-  overlap: number,
-) {
-  if (base.requiredGroups.size > 0 && overlap === 0) return false;
-
-  const worldGroups = ["martial", "game-system", "euro-fantasy", "horror", "sports", "medical", "food"];
-  for (const world of worldGroups) {
-    if (base.groups.has(world) && !candidate.groups.has(world)) return false;
-    if (!base.groups.has(world) && candidate.groups.has(world) && base.modernRomance) return false;
-  }
-
-  if (base.groups.has("workplace") && candidate.groups.has("martial")) return false;
-  if (base.businessStrategy && candidate.romanticCore && !candidate.groups.has("business-strategy")) return false;
-  if (base.businessStrategy && hasAnyGroup(candidate, ["martial", "game-system", "euro-fantasy"]) && !candidate.groups.has("business-strategy")) return false;
-  if (base.groups.has("horror") && candidate.romanticCore && !candidate.groups.has("horror")) return false;
-  if (base.modernRomance && hasAnyGroup(candidate, ["martial", "game-system", "euro-fantasy", "horror"])) return false;
-  return true;
-}
-
-function addVectorWeight(vector: Map<string, number>, key: string, weight: number) {
-  vector.set(key, (vector.get(key) ?? 0) + weight);
-}
-
-function buildRecommendationVector(
-  series: SeriesCatalog,
-  tagsById: Map<number, TagNode>,
-  tagDocumentCounts: Map<number, number>,
-  totalItems: number,
-) {
-  const vector = new Map<string, number>();
-  for (const tagId of series.tag_ids) {
-    const tag = tagsById.get(tagId);
-    if (!tag) continue;
-    const idf = recommendationTagIdf(tagId, tagDocumentCounts, totalItems);
-    const genre = isGenreTag(tag);
-    const taxonomyWeight = recommendationTagWeight(tag);
-    const exactWeight = taxonomyWeight * idf;
-    addVectorWeight(vector, `tag:${tagId}`, exactWeight);
-
-    const pathParts = tagPathParts(tag);
-    const parentKey = tag.parent_id != null ? `parent:${tag.parent_id}` : pathParts.slice(0, -1).join(" > ");
-    if (!genre && parentKey) addVectorWeight(vector, `ctx:${parentKey}`, taxonomyWeight * 0.22 * idf);
-    if (pathParts[0]) addVectorWeight(vector, `root:${pathParts[0]}`, Math.min(taxonomyWeight * 0.08, genre ? 0.16 : 0.1));
-  }
-  return vector;
-}
-
-function cosineSimilarity(left: Map<string, number>, right: Map<string, number>) {
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
-  for (const value of left.values()) leftNorm += value * value;
-  for (const value of right.values()) rightNorm += value * value;
-  for (const [key, value] of left) dot += value * (right.get(key) ?? 0);
-  if (leftNorm === 0 || rightNorm === 0) return 0;
-  return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+  return rankRecommendations({
+    base,
+    candidates: pool,
+    tags: store.tags,
+    features: store.recommendationFeatures,
+    shelf,
+    history: store.history,
+    latestDate: store.syncMeta?.historyLastDate,
+  });
 }
 
 function RecommendationShelfEditor({

@@ -2,7 +2,7 @@ import { inflate } from "pako";
 import { db, saveSyncMeta } from "../db/appDb";
 import { DATA_SOURCE_CANDIDATES } from "../domain/defaults";
 import { normalizeCatalog, resolveDisplayTitle } from "../domain/catalog";
-import type { HistoryMap, SeriesCatalog, SeriesDetail, SyncMeta, TagNode } from "../domain/types";
+import type { HistoryMap, RecommendationFeature, SeriesCatalog, SeriesDetail, SyncMeta, TagNode } from "../domain/types";
 
 function bytesToText(bytes: Uint8Array) {
   return new TextDecoder("utf-8").decode(bytes);
@@ -170,6 +170,19 @@ export async function syncFrontendData(
     true
   );
 
+  onProgress?.("Downloading recommendation features");
+
+  let recommendationFeatures: RecommendationFeature[] = [];
+  try {
+    recommendationFeatures = await fetchJson<RecommendationFeature[]>(
+      source,
+      "recommendations/features.json",
+      true
+    );
+  } catch {
+    recommendationFeatures = [];
+  }
+
   onProgress?.("Saving offline data");
 
   const normalized = normalizeCatalog(mergedCatalog, rawHistory);
@@ -186,18 +199,19 @@ export async function syncFrontendData(
 
   await db.transaction(
     "rw",
-    db.catalog,
-    db.tags,
-    db.details,
-    db.history,
+    [db.catalog, db.tags, db.details, db.recommendationFeatures, db.history],
     async () => {
       await db.catalog.clear();
       await db.tags.clear();
+      await db.recommendationFeatures.clear();
       await db.history.clear();
       await db.details.clear();
 
       await db.catalog.bulkPut(catalog);
       await db.tags.bulkPut(tags);
+      if (recommendationFeatures.length > 0) {
+        await db.recommendationFeatures.bulkPut(recommendationFeatures);
+      }
 
       await db.history.bulkPut(
         Object.entries(history).map(([id, entries]) => ({
@@ -219,21 +233,22 @@ export async function syncFrontendData(
 
   await saveSyncMeta(meta);
 
-  return { catalog, tags, history, meta };
+  return { catalog, tags, history, recommendationFeatures, meta };
 }
 
 export async function loadCachedData() {
-  const [catalog, tags, historyRows] = await Promise.all([
+  const [catalog, tags, historyRows, recommendationFeatures] = await Promise.all([
     db.catalog.toArray(),
     db.tags.toArray(),
     db.history.toArray(),
+    db.recommendationFeatures.toArray(),
   ]);
 
   const history = Object.fromEntries(
     historyRows.map((row) => [row.id, row.entries])
   ) as HistoryMap;
 
-  return { catalog, tags, history };
+  return { catalog, tags, history, recommendationFeatures };
 }
 
 export async function loadBundledCatalog() {
