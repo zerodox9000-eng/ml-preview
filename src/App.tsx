@@ -950,6 +950,13 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
         <p className="muted tiny">Default sensitive exclusions apply only to exact BL, GL, Smut, and Hentai tags.</p>
       </div>
 
+      <ToggleRow
+        label="Include estimated dates"
+        description="Show entries with estimated or missing release dates. Their Rel cover stat stays blank; use MB New to sort MangaBaka's latest order."
+        value={draft.filters.includeEstimatedDates ?? true}
+        onChange={(includeEstimatedDates) => updateFilters({ includeEstimatedDates })}
+      />
+
       <div className="field">
         <span className="small-label">Statuses</span>
         <div className="chips">
@@ -1177,7 +1184,12 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
           onClick={() =>
             setDraft({
               ...draft,
-              filters: { ...DEFAULT_FILTERS, sourceModes: [...(DEFAULT_FILTERS.sourceModes ?? [])], contentRatings: [...DEFAULT_FILTERS.contentRatings], metricRanges: [] },
+              filters: {
+                ...DEFAULT_FILTERS,
+                sourceModes: [...(DEFAULT_FILTERS.sourceModes ?? [])],
+                contentRatings: [...DEFAULT_FILTERS.contentRatings],
+                metricRanges: [],
+              },
             })
           }
         >

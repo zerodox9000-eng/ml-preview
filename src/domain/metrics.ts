@@ -23,6 +23,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { id: "chapters", label: "Chapters", shortLabel: "Ch", help: "Parsed chapter count when available.", filterable: true, anilistOnly: false },
   { id: "releaseDate", label: "Release date", shortLabel: "Rel", help: "Start date from MangaBaka/AniList export.", filterable: false, anilistOnly: false },
   { id: "endDate", label: "End date", shortLabel: "End", help: "Completion/end date when available.", filterable: false, anilistOnly: false },
+  { id: "mangabakaLatestRank", label: "MangaBaka latest", shortLabel: "MB New", help: "Global MangaBaka latest order from the mixed latest feed.", filterable: false, anilistOnly: false },
   { id: "popularityGrowth", label: "Popularity growth", shortLabel: "Pop+", help: "Popularity delta across available history.", filterable: true, anilistOnly: true },
   { id: "popularityGrowthPercent", label: "Popularity growth percent", shortLabel: "Pop+%", help: "Popularity percentage growth across available history.", filterable: true, anilistOnly: true },
   { id: "favouritesGrowth", label: "Favourites growth", shortLabel: "Fav+", help: "Favourite delta across available history.", filterable: true, anilistOnly: true },
@@ -57,12 +58,14 @@ function datePart(value?: string | null) {
 export function effectiveReleaseDate(series: SeriesCatalog) {
   const published = series.published;
   const actual = published?.start_date && !published.start_date_is_estimated ? published.start_date : null;
-  const fallback =
-    datePart(series.first_seen_at) ??
-    datePart(series.created_at) ??
-    datePart(series.added_at) ??
-    datePart(series.last_updated_at);
-  const date = actual ?? fallback ?? published?.start_date ?? null;
+  const trustedFirstSeen = series.first_seen_at_is_trusted ? datePart(series.first_seen_at) : null;
+  const date = actual ?? trustedFirstSeen ?? null;
+  return date && !isFutureDate(date) ? date : null;
+}
+
+export function displayReleaseDate(series: SeriesCatalog) {
+  const published = series.published;
+  const date = published?.start_date && !published.start_date_is_estimated ? published.start_date : null;
   return date && !isFutureDate(date) ? date : null;
 }
 
@@ -107,6 +110,7 @@ export function metricValue(series: SeriesCatalog, metric: MetricId, history: Hi
   if (metric === "popularityPercentile") return analytics.popularityPercentile ?? -Infinity;
   if (metric === "fanFavouriteDiscoveryScore") return analytics.fanFavouriteDiscoveryScore ?? -Infinity;
   if (metric === "fanFavouriteDiscoveryPercentile") return analytics.fanFavouriteDiscoveryPercentile ?? -Infinity;
+  if (metric === "mangabakaLatestRank") return series.mangabaka_latest_rank ?? Infinity;
   if (metric === "releaseDate") {
     const date = effectiveReleaseDate(series);
     return parseDate(date)?.getTime() ?? -Infinity;
@@ -152,7 +156,7 @@ function roundToDisplayPrecision(value: number, precision: number) {
 
 export function displayComparableMetricValue(series: SeriesCatalog, metric: MetricId, history?: HistoryMap, latestDate?: string | null) {
   const value = metricValue(series, metric, history, latestDate);
-  if (typeof value !== "number" || value === -Infinity || value == null || Number.isNaN(value)) return value;
+  if (typeof value !== "number" || value == null || !Number.isFinite(value)) return value;
   if (metric === "fanFavouriteRaw" || metric === "fanFavouriteDelta") return roundToDisplayPrecision(value, 1);
   if (metric.includes("Percentile") || metric.includes("Percent")) return roundToDisplayPrecision(value, 0);
   if (metric === "meanScore") return roundToDisplayPrecision(value, 0);
@@ -162,7 +166,7 @@ export function displayComparableMetricValue(series: SeriesCatalog, metric: Metr
 
 export function formatMetricValue(series: SeriesCatalog, metric: MetricId, history?: HistoryMap, latestDate?: string | null) {
   const value = displayComparableMetricValue(series, metric, history, latestDate);
-  if (value === -Infinity || value == null || Number.isNaN(Number(value))) return "n/a";
+  if (value == null || !Number.isFinite(Number(value))) return "n/a";
   if (typeof value === "string") return value;
   if (metric === "fanFavouriteRaw" || metric === "fanFavouriteDelta") return `${Number(value).toFixed(1)}%`;
   if (metric.includes("Percentile") || metric.includes("Percent") || metric.includes("Percentile")) return `${Number(value).toFixed(0)}%`;
@@ -170,7 +174,7 @@ export function formatMetricValue(series: SeriesCatalog, metric: MetricId, histo
     return Number(value).toFixed(metric === "meanScore" ? 0 : 1);
   }
   if (metric === "releaseDate" || metric === "endDate") {
-    const raw = metric === "releaseDate" ? effectiveReleaseDate(series) : effectiveEndDate(series);
+    const raw = metric === "releaseDate" ? displayReleaseDate(series) : effectiveEndDate(series);
     return raw ?? "n/a";
   }
   if (metric === "year") return String(Math.trunc(Number(value)));

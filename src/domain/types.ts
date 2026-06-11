@@ -57,9 +57,12 @@ export interface SeriesCatalog {
   analytics: AnalyticsStats;
   published?: PublishedDates | null;
   first_seen_at?: string | null;
+  first_seen_at_is_trusted?: boolean | null;
   created_at?: string | null;
   added_at?: string | null;
   last_updated_at?: string | null;
+  mangabaka_latest_rank?: number | null;
+  mangabaka_latest_snapshot_at?: string | null;
   authors?: string[];
   artists?: string[];
   links?: Record<string, string | null>;
@@ -120,6 +123,7 @@ export type MetricId =
   | "fanFavouriteDiscoveryPercentile"
   | "releaseDate"
   | "endDate"
+  | "mangabakaLatestRank"
   | "popularityGrowth"
   | "popularityGrowthPercent"
   | "favouritesGrowth"
@@ -164,6 +168,7 @@ export interface FeedFilters {
   minMeanScore: number | null;
   maxMeanScore: number | null;
   metricRanges: MetricRange[];
+  includeEstimatedDates: boolean;
   dateField: "none" | "release" | "end";
   rolling: RollingWindow;
   labelIds: string[];

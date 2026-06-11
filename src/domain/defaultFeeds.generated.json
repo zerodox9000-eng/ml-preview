@@ -47,7 +47,8 @@
           "min": 3,
           "max": null
         }
-      ]
+      ],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -140,7 +141,8 @@
         "amount": 7,
         "unit": "days"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -235,7 +237,8 @@
         "from": "2026-05-17",
         "to": "2026-05-30"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -329,7 +332,8 @@
           "min": 2,
           "max": null
         }
-      ]
+      ],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -422,7 +426,8 @@
         "amount": 1,
         "unit": "weeks"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -515,7 +520,8 @@
         "amount": 1,
         "unit": "weeks"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -607,7 +613,8 @@
         "amount": 1,
         "unit": "weeks"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -694,7 +701,8 @@
       "sourceModes": [
         "anilist"
       ],
-      "metricRanges": []
+      "metricRanges": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -782,7 +790,8 @@
         "non-anilist",
         "anilist"
       ],
-      "metricRanges": []
+      "metricRanges": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -827,6 +836,283 @@
     "showDescription": false
   },
   {
+    "id": "default-feed-mb-latest",
+    "name": "MangaBaka Latest",
+    "description": "Mixed MangaBaka latest order with local source filters.",
+    "showDescription": false,
+    "createdAt": "2026-06-11T03:27:59.451Z",
+    "updatedAt": "2026-06-11T03:27:59.451Z",
+    "filters": {
+      "sourceMode": "mixed",
+      "sourceModes": [
+        "anilist",
+        "non-anilist"
+      ],
+      "query": "",
+      "includeTagIds": [],
+      "excludeTagIds": [
+        4,
+        180,
+        41,
+        10
+      ],
+      "tagMatch": "any",
+      "contentRatings": [
+        "safe",
+        "suggestive"
+      ],
+      "statuses": [],
+      "minChapters": null,
+      "maxChapters": null,
+      "minYear": null,
+      "maxYear": null,
+      "minPopularity": null,
+      "maxPopularity": null,
+      "minFavourites": null,
+      "maxFavourites": null,
+      "minMeanScore": null,
+      "maxMeanScore": null,
+      "metricRanges": [],
+      "includeEstimatedDates": true,
+      "dateField": "none",
+      "rolling": {
+        "mode": "none",
+        "amount": 7,
+        "unit": "days"
+      },
+      "labelIds": []
+    },
+    "sort": [
+      {
+        "id": "default-feed-mb-latest-sort-mb",
+        "metric": "mangabakaLatestRank",
+        "direction": "asc"
+      },
+      {
+        "id": "default-feed-mb-latest-sort-rel",
+        "metric": "releaseDate",
+        "direction": "desc"
+      }
+    ],
+    "view": {
+      "mode": "grid",
+      "gridColumns": 3,
+      "gridDensity": "standard",
+      "listCoverSize": "medium",
+      "listDensity": "standard",
+      "metricSlots": [
+        "mangabakaLatestRank",
+        "releaseDate"
+      ],
+      "visible": {
+        "cover": true,
+        "title": true,
+        "rank": true,
+        "genreChips": false,
+        "status": false,
+        "year": false,
+        "chapters": false,
+        "contentRating": false,
+        "popularity": false,
+        "favourites": false,
+        "meanScore": false,
+        "fanFavouriteRatio": false,
+        "discoveryScore": false,
+        "growthDelta": false,
+        "labels": false,
+        "sourceBadges": false,
+        "quickActions": false,
+        "description": false,
+        "links": false
+      }
+    },
+    "coverTitleIds": []
+  },
+  {
+    "id": "default-feed-mb-latest-anilist",
+    "name": "AniList Latest",
+    "description": "AniList titles projected from MangaBaka latest order.",
+    "showDescription": false,
+    "createdAt": "2026-06-11T03:27:59.451Z",
+    "updatedAt": "2026-06-11T03:27:59.451Z",
+    "filters": {
+      "sourceMode": "anilist",
+      "sourceModes": [
+        "anilist"
+      ],
+      "query": "",
+      "includeTagIds": [],
+      "excludeTagIds": [
+        4,
+        180,
+        41,
+        10
+      ],
+      "tagMatch": "any",
+      "contentRatings": [
+        "safe",
+        "suggestive"
+      ],
+      "statuses": [],
+      "minChapters": null,
+      "maxChapters": null,
+      "minYear": null,
+      "maxYear": null,
+      "minPopularity": null,
+      "maxPopularity": null,
+      "minFavourites": null,
+      "maxFavourites": null,
+      "minMeanScore": null,
+      "maxMeanScore": null,
+      "metricRanges": [],
+      "includeEstimatedDates": true,
+      "dateField": "none",
+      "rolling": {
+        "mode": "none",
+        "amount": 7,
+        "unit": "days"
+      },
+      "labelIds": []
+    },
+    "sort": [
+      {
+        "id": "default-feed-mb-latest-anilist-sort-mb",
+        "metric": "mangabakaLatestRank",
+        "direction": "asc"
+      },
+      {
+        "id": "default-feed-mb-latest-anilist-sort-rel",
+        "metric": "releaseDate",
+        "direction": "desc"
+      }
+    ],
+    "view": {
+      "mode": "grid",
+      "gridColumns": 3,
+      "gridDensity": "standard",
+      "listCoverSize": "medium",
+      "listDensity": "standard",
+      "metricSlots": [
+        "mangabakaLatestRank",
+        "releaseDate"
+      ],
+      "visible": {
+        "cover": true,
+        "title": true,
+        "rank": true,
+        "genreChips": false,
+        "status": false,
+        "year": false,
+        "chapters": false,
+        "contentRating": false,
+        "popularity": false,
+        "favourites": false,
+        "meanScore": false,
+        "fanFavouriteRatio": false,
+        "discoveryScore": false,
+        "growthDelta": false,
+        "labels": false,
+        "sourceBadges": false,
+        "quickActions": false,
+        "description": false,
+        "links": false
+      }
+    },
+    "coverTitleIds": []
+  },
+  {
+    "id": "default-feed-mb-latest-non-anilist",
+    "name": "Non-AniList Latest",
+    "description": "Non-AniList titles projected from MangaBaka latest order.",
+    "showDescription": false,
+    "createdAt": "2026-06-11T03:27:59.451Z",
+    "updatedAt": "2026-06-11T03:27:59.451Z",
+    "filters": {
+      "sourceMode": "non-anilist",
+      "sourceModes": [
+        "non-anilist"
+      ],
+      "query": "",
+      "includeTagIds": [],
+      "excludeTagIds": [
+        4,
+        180,
+        41,
+        10
+      ],
+      "tagMatch": "any",
+      "contentRatings": [
+        "safe",
+        "suggestive"
+      ],
+      "statuses": [],
+      "minChapters": null,
+      "maxChapters": null,
+      "minYear": null,
+      "maxYear": null,
+      "minPopularity": null,
+      "maxPopularity": null,
+      "minFavourites": null,
+      "maxFavourites": null,
+      "minMeanScore": null,
+      "maxMeanScore": null,
+      "metricRanges": [],
+      "includeEstimatedDates": true,
+      "dateField": "none",
+      "rolling": {
+        "mode": "none",
+        "amount": 7,
+        "unit": "days"
+      },
+      "labelIds": []
+    },
+    "sort": [
+      {
+        "id": "default-feed-mb-latest-non-anilist-sort-mb",
+        "metric": "mangabakaLatestRank",
+        "direction": "asc"
+      },
+      {
+        "id": "default-feed-mb-latest-non-anilist-sort-rel",
+        "metric": "releaseDate",
+        "direction": "desc"
+      }
+    ],
+    "view": {
+      "mode": "grid",
+      "gridColumns": 3,
+      "gridDensity": "standard",
+      "listCoverSize": "medium",
+      "listDensity": "standard",
+      "metricSlots": [
+        "mangabakaLatestRank",
+        "releaseDate"
+      ],
+      "visible": {
+        "cover": true,
+        "title": true,
+        "rank": true,
+        "genreChips": false,
+        "status": false,
+        "year": false,
+        "chapters": false,
+        "contentRating": false,
+        "popularity": false,
+        "favourites": false,
+        "meanScore": false,
+        "fanFavouriteRatio": false,
+        "discoveryScore": false,
+        "growthDelta": false,
+        "labels": false,
+        "sourceBadges": false,
+        "quickActions": false,
+        "description": false,
+        "links": false
+      }
+    },
+    "coverTitleIds": []
+  },
+  {
     "id": "default-feed-10",
     "name": "New ",
     "createdAt": "2026-06-01T01:35:08.025Z",
@@ -867,7 +1153,8 @@
         "amount": 1,
         "unit": "weeks"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": false
     },
     "sort": [
       {
@@ -952,7 +1239,8 @@
         "amount": 7,
         "unit": "years"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": false
     },
     "sort": [
       {
@@ -1039,7 +1327,8 @@
         "amount": 7,
         "unit": "days"
       },
-      "labelIds": []
+      "labelIds": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -1135,7 +1424,8 @@
       "sourceModes": [
         "anilist"
       ],
-      "metricRanges": []
+      "metricRanges": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -1230,7 +1520,8 @@
       "sourceModes": [
         "anilist"
       ],
-      "metricRanges": []
+      "metricRanges": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -1325,7 +1616,8 @@
       "sourceModes": [
         "anilist"
       ],
-      "metricRanges": []
+      "metricRanges": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {
@@ -1420,7 +1712,8 @@
       "sourceModes": [
         "anilist"
       ],
-      "metricRanges": []
+      "metricRanges": [],
+      "includeEstimatedDates": true
     },
     "sort": [
       {

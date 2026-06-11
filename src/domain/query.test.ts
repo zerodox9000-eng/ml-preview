@@ -193,7 +193,7 @@ describe("runFeedQuery", () => {
     expect(result.items.map((item) => item.id)).toEqual([3, 2, 1]);
   });
 
-  it("uses update/id fallback instead of alphabetical order when non-AniList sort values are missing", () => {
+  it("uses id fallback instead of last-updated or alphabetical order when release dates are missing", () => {
     const feed = createFeed("missing non anilist values");
     feed.filters.sourceMode = "non-anilist";
     feed.filters.sourceModes = ["non-anilist"];
@@ -213,6 +213,64 @@ describe("runFeedQuery", () => {
       metaHistoryLast: null,
     });
     expect(result.items.map((item) => item.id)).toEqual([600, 500]);
+  });
+
+  it("can exclude estimated release dates while keeping real dates", () => {
+    const feed = createFeed("real releases only");
+    feed.filters.sourceModes = ["anilist", "non-anilist"];
+    feed.filters.sourceMode = "mixed";
+    feed.filters.includeEstimatedDates = false;
+    feed.sort = [{ id: "release", metric: "releaseDate", direction: "desc" }];
+    const result = runFeedQuery({
+      feed,
+      series: [
+        { ...baseSeries[0], id: 80, display_title: "Real", published: { start_date: "2026-06-05", end_date: null, start_date_is_estimated: false } },
+        { ...baseSeries[0], id: 81, display_title: "Estimated", published: { start_date: "2026-01-01", end_date: null, start_date_is_estimated: true } },
+        { ...baseSeries[0], id: 82, display_title: "Missing", published: null },
+      ],
+      tags,
+      history,
+      labels: [],
+      settings: DEFAULT_SETTINGS,
+      metaHistoryFirst: "2024-05-01",
+      metaHistoryLast: "2024-05-10",
+    });
+    expect(result.items.map((item) => item.id)).toEqual([80]);
+  });
+
+  it("uses MangaBaka latest rank after projecting source mode locally", () => {
+    const feed = createFeed("mb latest non anilist");
+    feed.filters.sourceMode = "non-anilist";
+    feed.filters.sourceModes = ["non-anilist"];
+    feed.sort = [{ id: "mb", metric: "mangabakaLatestRank", direction: "asc" }];
+    feed.view.metricSlots = ["mangabakaLatestRank"];
+    const result = runFeedQuery({
+      feed,
+      series: [
+        { ...baseSeries[0], id: 90, display_title: "AniList rank one", mangabaka_latest_rank: 1 },
+        {
+          ...baseSeries[2],
+          id: 91,
+          display_title: "Non AniList rank two",
+          stats: { popularity: null, favourites: null, meanScore: null },
+          mangabaka_latest_rank: 2,
+        },
+        {
+          ...baseSeries[2],
+          id: 92,
+          display_title: "Non AniList rank four",
+          stats: { popularity: null, favourites: null, meanScore: null },
+          mangabaka_latest_rank: 4,
+        },
+      ],
+      tags,
+      history,
+      labels: [],
+      settings: { ...DEFAULT_SETTINGS, nonAniListPlacement: "mixed" },
+      metaHistoryFirst: null,
+      metaHistoryLast: null,
+    });
+    expect(result.items.map((item) => item.id)).toEqual([91, 92]);
   });
 
   it("keeps future release dates inactive for sorting and rolling filters", () => {

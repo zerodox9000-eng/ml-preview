@@ -93,6 +93,7 @@ export const DEFAULT_FILTERS: FeedFilters = {
   minMeanScore: null,
   maxMeanScore: null,
   metricRanges: [],
+  includeEstimatedDates: true,
   dateField: "none",
   rolling: {
     mode: "none",

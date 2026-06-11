@@ -112,6 +112,7 @@ function normalizeFeed(feed: Feed): Feed {
               : ["anilist", "non-anilist"],
       contentRatings: feed.filters.contentRatings ?? DEFAULT_SETTINGS.contentRatings,
       metricRanges: feed.filters.metricRanges ?? [],
+      includeEstimatedDates: feed.filters.includeEstimatedDates ?? true,
       excludeTagIds,
       labelIds: [],
       query: "",

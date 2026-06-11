@@ -9,7 +9,7 @@ import type {
   UserLabel,
 } from "./types";
 import { isDateWithin, isFutureDate, resolveRollingWindow } from "./dates";
-import { chapterNumber, displayComparableMetricValue, effectiveEndDate, effectiveReleaseDate, historyDeltaForWindow, metricDefinition, metricValue } from "./metrics";
+import { chapterNumber, displayComparableMetricValue, displayReleaseDate, effectiveEndDate, effectiveReleaseDate, historyDeltaForWindow, metricDefinition, metricValue } from "./metrics";
 
 const RELATIONSHIP_SENSITIVE_NAMES = new Set(["boys love", "girls love"]);
 const ADULT_SENSITIVE_NAMES = new Set(["smut", "hentai"]);
@@ -189,6 +189,8 @@ export function runFeedQuery(args: {
     if (!sourceModes.includes(ani ? "anilist" : "non-anilist")) return false;
 
     if (filters.statuses.length > 0 && (!item.status || !filters.statuses.includes(item.status))) return false;
+    if (filters.includeEstimatedDates === false && !displayReleaseDate(item)) return false;
+
     if (filters.minYear != null && (item.year == null || item.year < filters.minYear)) return false;
     if (filters.maxYear != null && (item.year == null || item.year > filters.maxYear)) return false;
 
@@ -204,7 +206,7 @@ export function runFeedQuery(args: {
     if (filters.maxMeanScore != null && (item.stats.meanScore == null || item.stats.meanScore > filters.maxMeanScore)) return false;
     for (const range of filters.metricRanges ?? []) {
       const value = displayComparableMetricValue(item, range.metric, history, metaHistoryLast);
-      if (typeof value !== "number" || value === -Infinity || Number.isNaN(value)) return false;
+      if (typeof value !== "number" || !Number.isFinite(value)) return false;
       if (range.min != null && value < range.min) return false;
       if (range.max != null && value > range.max) return false;
     }
@@ -249,8 +251,8 @@ export function runFeedQuery(args: {
         av = historyDeltaForWindow(a.id, rule.metric, history, window.from, window.to) ?? av;
         bv = historyDeltaForWindow(b.id, rule.metric, history, window.from, window.to) ?? bv;
       }
-      const aMissing = typeof av !== "string" && (av === -Infinity || av == null || Number.isNaN(Number(av)));
-      const bMissing = typeof bv !== "string" && (bv === -Infinity || bv == null || Number.isNaN(Number(bv)));
+      const aMissing = typeof av !== "string" && (!Number.isFinite(Number(av)) || av == null);
+      const bMissing = typeof bv !== "string" && (!Number.isFinite(Number(bv)) || bv == null);
       if (aMissing || bMissing) {
         if (aMissing && bMissing) continue;
         return aMissing ? 1 : -1;
@@ -263,8 +265,8 @@ export function runFeedQuery(args: {
     for (const metric of fallbackMetrics) {
       const av = metricValue(a, metric, history, metaHistoryLast);
       const bv = metricValue(b, metric, history, metaHistoryLast);
-      const aMissing = av === -Infinity || av == null || Number.isNaN(Number(av));
-      const bMissing = bv === -Infinity || bv == null || Number.isNaN(Number(bv));
+      const aMissing = !Number.isFinite(Number(av)) || av == null;
+      const bMissing = !Number.isFinite(Number(bv)) || bv == null;
       if (aMissing || bMissing) {
         if (aMissing && bMissing) continue;
         return aMissing ? 1 : -1;
