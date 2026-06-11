@@ -110,7 +110,7 @@ test("mobile feeds, search, detail, recommendations, and navigation state work",
 
   await expect(page.getByRole("heading", { name: "Most ♥️ Series" })).toBeVisible();
   await expect(page.getByTestId("title-card").first()).toBeVisible();
-  await expect(page.locator(".compact-metrics").first()).toContainText("Fan%");
+  await expect(page.locator(".compact-metrics").first()).toContainText("DiscPct");
   await expect(page.locator(".bottom-nav")).not.toContainText("Folders");
 
   await page.getByRole("link", { name: "Search" }).click();

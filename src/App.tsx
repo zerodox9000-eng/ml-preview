@@ -652,7 +652,7 @@ function TitleMetrics({
   latestDate?: string | null;
   metricWindow?: { from: string; to: string } | null;
 }) {
-  const metricSlots: MetricId[] = (view.metricSlots?.length ? view.metricSlots : (["fanFavouriteRaw", "popularity", "favourites"] as MetricId[])).slice(0, 3);
+  const metricSlots: MetricId[] = (view.metricSlots?.length ? view.metricSlots : (["fanFavouriteDiscoveryPercentile"] as MetricId[])).slice(0, 3);
   const values = metricSlots
     .map((metric) => ({ metric, value: formatFeedMetricValue(series, metric, history, latestDate, metricWindow) }))
     .filter((item) => item.value !== "n/a");

@@ -52,8 +52,8 @@
     },
     "sort": [
       {
-        "id": "bafeff07-f735-4f96-9250-c40c38947ece",
-        "metric": "fanFavouriteRaw",
+        "id": "default-feed-1-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -64,7 +64,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -146,8 +146,8 @@
     },
     "sort": [
       {
-        "id": "761ef101-c890-4f11-aa22-e902849d2481",
-        "metric": "fanFavouriteRaw",
+        "id": "default-feed-2-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -158,7 +158,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -242,8 +242,8 @@
     },
     "sort": [
       {
-        "id": "d0e12964-9148-4b0b-98ee-cdad4f00a7ea",
-        "metric": "popularityGrowth",
+        "id": "default-feed-3-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -254,7 +254,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -337,8 +337,8 @@
     },
     "sort": [
       {
-        "id": "1c7661e7-0154-4d46-a255-11d288c82630",
-        "metric": "discoveryPercentileDelta",
+        "id": "default-feed-4-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -349,7 +349,7 @@
       "listCoverSize": "large",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -431,8 +431,8 @@
     },
     "sort": [
       {
-        "id": "94700ed1-e9dc-46fa-a0dd-52742bb4ec79",
-        "metric": "popularityGrowthPercent",
+        "id": "default-feed-5-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -443,7 +443,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -525,8 +525,8 @@
     },
     "sort": [
       {
-        "id": "3935d711-92ac-4c1f-b314-c1605b567e08",
-        "metric": "popularityGrowthPercent",
+        "id": "default-feed-6-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -537,7 +537,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -618,8 +618,8 @@
     },
     "sort": [
       {
-        "id": "6aa1f7fa-3901-47c8-a0e8-b6e1da9f688d",
-        "metric": "popularityGrowthPercent",
+        "id": "default-feed-7-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -630,7 +630,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -706,8 +706,8 @@
     },
     "sort": [
       {
-        "id": "626b1955-1884-47f5-be2a-2b50f5d6b028",
-        "metric": "popularityGrowth",
+        "id": "default-feed-8-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -718,7 +718,7 @@
       "listCoverSize": "large",
       "listDensity": "standard",
       "metricSlots": [
-        "popularity"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -795,8 +795,8 @@
     },
     "sort": [
       {
-        "id": "772b2802-4ac8-4071-889a-82f2e1cd81d1",
-        "metric": "endDate",
+        "id": "default-feed-9-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -807,7 +807,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "endDate"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -895,7 +895,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "year"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -980,7 +980,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "year"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1065,7 +1065,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "year"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1137,8 +1137,8 @@
     },
     "sort": [
       {
-        "id": "96d7fc84-695e-4bb7-ab1d-42cf5baf6d7a",
-        "metric": "releaseDate",
+        "id": "default-feed-10-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1149,7 +1149,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "releaseDate"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1223,8 +1223,8 @@
     },
     "sort": [
       {
-        "id": "86e0b27f-26b0-4807-aed6-76d65b2b983e",
-        "metric": "releaseDate",
+        "id": "default-feed-11-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1235,8 +1235,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "year",
-        "releaseDate"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1311,8 +1310,8 @@
     },
     "sort": [
       {
-        "id": "07849e0c-3777-4c40-bf81-284b40298416",
-        "metric": "favourites",
+        "id": "default-feed-12-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1323,9 +1322,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw",
-        "popularity",
-        "favourites"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1408,8 +1405,8 @@
     },
     "sort": [
       {
-        "id": "e36ddc03-6b4f-48bb-ae8b-cc93aa1a6f7f",
-        "metric": "fanRatioPercentile",
+        "id": "default-feed-13-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1420,7 +1417,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1504,8 +1501,8 @@
     },
     "sort": [
       {
-        "id": "65495ba4-0747-42a6-bae5-9952ab7589b5",
-        "metric": "fanRatioPercentile",
+        "id": "default-feed-14-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1516,7 +1513,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1600,8 +1597,8 @@
     },
     "sort": [
       {
-        "id": "b2f131ff-da06-4876-8682-20263e1f516e",
-        "metric": "fanRatioPercentile",
+        "id": "default-feed-15-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1612,7 +1609,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,
@@ -1696,8 +1693,8 @@
     },
     "sort": [
       {
-        "id": "e85f3779-5b0c-48db-8a61-cceaa3e07115",
-        "metric": "fanRatioPercentile",
+        "id": "default-feed-16-sort-gem",
+        "metric": "fanFavouriteDiscoveryPercentile",
         "direction": "desc"
       }
     ],
@@ -1708,7 +1705,7 @@
       "listCoverSize": "medium",
       "listDensity": "standard",
       "metricSlots": [
-        "fanFavouriteRaw"
+        "fanFavouriteDiscoveryPercentile"
       ],
       "visible": {
         "cover": true,

@@ -48,7 +48,7 @@ export const DEFAULT_FEED_VIEW: FeedViewSettings = {
   gridDensity: "standard",
   listCoverSize: "medium",
   listDensity: "standard",
-  metricSlots: ["fanFavouriteRaw", "popularity", "favourites"],
+  metricSlots: ["fanFavouriteDiscoveryPercentile"],
   visible: DEFAULT_VISIBLE_TITLE_FIELDS,
 };
 
@@ -104,9 +104,7 @@ export const DEFAULT_FILTERS: FeedFilters = {
 };
 
 export const DEFAULT_SORT: SortRule[] = [
-  { id: "sort-fan", metric: "fanFavouriteRaw", direction: "desc" },
-  { id: "sort-popularity", metric: "popularity", direction: "desc" },
-  { id: "sort-title", metric: "title", direction: "asc" },
+  { id: "sort-discovery-percentile", metric: "fanFavouriteDiscoveryPercentile", direction: "desc" },
 ];
 
 export const DEFAULT_RECOMMENDATION_SHELVES: RecommendationShelf[] = [
