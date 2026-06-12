@@ -65,7 +65,7 @@ export const DEFAULT_DETAIL_VISIBLE: DetailVisibleFields = {
   favourites: true,
   meanScore: false,
   fanFavouriteRatio: false,
-  discoveryMetrics: false,
+  discoveryMetrics: true,
   growthNumbers: false,
   status: true,
   year: true,

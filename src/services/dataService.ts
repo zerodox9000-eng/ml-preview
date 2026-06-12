@@ -261,6 +261,14 @@ export async function loadBundledCatalog() {
 
 export async function fetchSeriesDetail(source: string, id: number) {
   const cached = await db.details.get(id);
+  if (cached) {
+    void fetchJson<SeriesDetail>(source, `details/${id}.json`, false)
+      .then((detail) => db.details.put(fixMangaBakaLink(detail)))
+      .catch(() => {
+        // Cached detail keeps route changes instant; refresh failures can wait for the next sync.
+      });
+    return cached;
+  }
   try {
     const detail = fixMangaBakaLink(
       await fetchJson<SeriesDetail>(

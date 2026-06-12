@@ -222,38 +222,34 @@ function BottomDrawer({
 function HomePage() {
   const store = useAppStore();
   const [editorOpen, setEditorOpen] = useState(false);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [swipeAnimating, setSwipeAnimating] = useState(false);
+  const pagerRef = useRef<HTMLDivElement | null>(null);
+  const pointerRef = useRef<{ id: number; x: number; y: number; mode: "pending" | "horizontal" | "vertical" } | null>(null);
+  const [pagerOffset, setPagerOffset] = useState(0);
+  const [pagerAnimating, setPagerAnimating] = useState(false);
   const activeFeed = store.feeds.find((feed) => feed.id === store.activeFeedId) ?? store.feeds[0] ?? null;
+  const activeIndex = activeFeed ? store.feeds.findIndex((item) => item.id === activeFeed.id) : -1;
+  const previousFeed = activeIndex > 0 ? store.feeds[activeIndex - 1] : null;
+  const nextFeed = activeIndex >= 0 && activeIndex < store.feeds.length - 1 ? store.feeds[activeIndex + 1] : null;
 
   useEffect(() => {
     if (!store.activeFeedId && store.feeds[0]) store.setActiveFeedId(store.feeds[0].id);
   }, [store]);
 
-  const animateFeedChange = (nextIndex: number, direction: 1 | -1) => {
-    const width = window.innerWidth || 360;
-    setSwipeAnimating(true);
-    setSwipeOffset(-direction * width);
-    window.setTimeout(() => {
-      store.setActiveFeedId(store.feeds[nextIndex].id);
-      resetPageScroll();
-      setSwipeAnimating(false);
-      setSwipeOffset(direction * width);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setSwipeAnimating(true);
-          setSwipeOffset(0);
-          window.setTimeout(() => setSwipeAnimating(false), 220);
-        });
-      });
-    }, 190);
+  const settlePager = () => {
+    setPagerAnimating(true);
+    setPagerOffset(0);
+    window.setTimeout(() => setPagerAnimating(false), 220);
   };
 
-  const settleSwipe = () => {
-    setSwipeAnimating(true);
-    setSwipeOffset(0);
-    window.setTimeout(() => setSwipeAnimating(false), 180);
+  const finishPager = (targetIndex: number, finalOffset: number) => {
+    setPagerAnimating(true);
+    setPagerOffset(finalOffset);
+    window.setTimeout(() => {
+      store.setActiveFeedId(store.feeds[targetIndex].id);
+      resetPageScroll();
+      setPagerAnimating(false);
+      setPagerOffset(0);
+    }, 230);
   };
 
   return (
@@ -277,47 +273,57 @@ function HomePage() {
         </div>
       ) : (
         <div
-          className={`feed-swipe-surface ${swipeAnimating ? "animating" : ""}`}
-          style={{ "--swipe-offset": `${swipeOffset}px` } as React.CSSProperties}
-          onTouchStart={(event) => {
-            const touch = event.touches[0];
-            touchStart.current = { x: touch.clientX, y: touch.clientY };
+          ref={pagerRef}
+          className={`feed-pager ${pagerAnimating ? "animating" : ""}`}
+          style={{ "--pager-offset": `${pagerOffset}px` } as React.CSSProperties}
+          onPointerDown={(event) => {
+            if (!event.isPrimary || event.pointerType === "mouse") return;
+            pointerRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, mode: "pending" };
           }}
-          onTouchMove={(event) => {
-            const start = touchStart.current;
-            if (!start || event.touches.length === 0) return;
-            const touch = event.touches[0];
-            const dx = touch.clientX - start.x;
-            const dy = touch.clientY - start.y;
-            if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
-            setSwipeAnimating(false);
-            setSwipeOffset(Math.max(-120, Math.min(120, dx)));
+          onPointerMove={(event) => {
+            const start = pointerRef.current;
+            if (!start || start.id !== event.pointerId || !event.isPrimary) return;
+            const dx = event.clientX - start.x;
+            const dy = event.clientY - start.y;
+            if (start.mode === "pending") {
+              if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+              start.mode = Math.abs(dx) > Math.abs(dy) * 1.35 ? "horizontal" : "vertical";
+              if (start.mode === "horizontal") event.currentTarget.setPointerCapture(event.pointerId);
+            }
+            if (start.mode !== "horizontal") return;
+            event.preventDefault();
+            const canMove = dx < 0 ? Boolean(nextFeed) : Boolean(previousFeed);
+            const resisted = canMove ? dx : dx * 0.28;
+            const width = pagerRef.current?.clientWidth || window.innerWidth || 360;
+            setPagerAnimating(false);
+            setPagerOffset(Math.max(-width, Math.min(width, resisted)));
           }}
-          onTouchEnd={(event) => {
-            const start = touchStart.current;
-            touchStart.current = null;
-            if (!start || event.changedTouches.length === 0) {
-              settleSwipe();
+          onPointerUp={(event) => {
+            const start = pointerRef.current;
+            pointerRef.current = null;
+            if (!start || start.id !== event.pointerId) return;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            const dx = event.clientX - start.x;
+            const dy = event.clientY - start.y;
+            const width = pagerRef.current?.clientWidth || window.innerWidth || 360;
+            if (start.mode !== "horizontal" || Math.abs(dx) < Math.min(96, width * 0.24) || Math.abs(dx) < Math.abs(dy) * 1.35) {
+              settlePager();
               return;
             }
-            const touch = event.changedTouches[0];
-            const dx = touch.clientX - start.x;
-            const dy = touch.clientY - start.y;
-            if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.35) {
-              settleSwipe();
+            const targetIndex = dx < 0 ? activeIndex + 1 : activeIndex - 1;
+            if (targetIndex < 0 || targetIndex >= store.feeds.length) {
+              settlePager();
               return;
             }
-            const index = store.feeds.findIndex((item) => item.id === activeFeed.id);
-            const next = dx < 0 ? index + 1 : index - 1;
-            if (next >= 0 && next < store.feeds.length) {
-              animateFeedChange(next, dx < 0 ? 1 : -1);
-            } else {
-              settleSwipe();
-            }
+            finishPager(targetIndex, dx < 0 ? -width : width);
           }}
-          onTouchCancel={settleSwipe}
+          onPointerCancel={settlePager}
         >
-          <FeedView feed={activeFeed} />
+          <div className="feed-pager-track">
+            <div className="feed-pager-panel">{previousFeed ? <FeedPreview feed={previousFeed} /> : null}</div>
+            <div className="feed-pager-panel">{activeFeed ? <FeedView feed={activeFeed} /> : null}</div>
+            <div className="feed-pager-panel">{nextFeed ? <FeedPreview feed={nextFeed} /> : null}</div>
+          </div>
         </div>
       )}
       <BottomDrawer title="Create Feed" open={editorOpen} onOpenChange={setEditorOpen}>
@@ -358,6 +364,37 @@ function FeedTabs() {
         </button>
       ))}
     </div>
+  );
+}
+
+function FeedPreview({ feed }: { feed: Feed }) {
+  const store = useAppStore();
+  const previewItems = useMemo(
+    () =>
+      runFeedQuery({
+        feed,
+        series: store.catalog,
+        tags: store.tags,
+        history: store.history,
+        labels: store.labels,
+        settings: store.settings,
+        metaHistoryFirst: store.syncMeta?.historyFirstDate,
+        metaHistoryLast: store.syncMeta?.historyLastDate,
+      }).items.slice(0, 12),
+    [feed, store.catalog, store.history, store.labels, store.settings, store.syncMeta, store.tags],
+  );
+  return (
+    <section className="section feed-preview" aria-hidden="true">
+      <h1 className="single-line-title">{feed.name}</h1>
+      {feed.showDescription && feed.description && <p className="feed-description">{feed.description}</p>}
+      <div className={`feed-preview-grid columns-${feed.view.gridColumns}`}>
+        {previewItems.map((series, index) => (
+          <div className="feed-preview-card" key={`${feed.id}-${series.id}`}>
+            <Cover series={series} priority={index < 6} />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -532,7 +569,7 @@ function LoadMore({ visibleCount, total, onMore }: { visibleCount: number; total
   );
 }
 
-function Cover({ series }: { series: SeriesCatalog }) {
+function Cover({ series, priority = false }: { series: SeriesCatalog; priority?: boolean }) {
   const initials = series.display_title
     .split(/\s+/)
     .filter(Boolean)
@@ -542,7 +579,11 @@ function Cover({ series }: { series: SeriesCatalog }) {
     .toUpperCase();
   return (
     <div className="cover-wrap">
-      {series.cover ? <img src={series.cover} alt="" loading="lazy" /> : <div className="cover-fallback cover-fallback-initials">{initials || "ML"}</div>}
+      {series.cover ? (
+        <img src={series.cover} alt="" loading={priority ? "eager" : "lazy"} decoding="async" fetchPriority={priority ? "high" : "auto"} />
+      ) : (
+        <div className="cover-fallback cover-fallback-initials">{initials || "ML"}</div>
+      )}
     </div>
   );
 }
@@ -596,7 +637,7 @@ function TitleCard({
     <div className="title-card-wrap">
       <Link to={`/title/${series.id}`} className="title-card" data-testid="title-card">
         <div className="poster-shell">
-          <Cover series={series} />
+          <Cover series={series} priority={rank <= 18} />
           {view.visible.rank && <span className="rank">{rank}</span>}
           <div className="poster-metrics">
             <TitleMetrics series={series} view={view} compact history={history} latestDate={latestDate} metricWindow={metricWindow} />
@@ -1410,13 +1451,20 @@ function SearchPage() {
       <h1>Search</h1>
       <form className="field" onSubmit={(event) => { event.preventDefault(); remember(); }}>
         <label>Title</label>
-        <input
-          className="input"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search titles"
-          autoComplete="off"
-        />
+        <div className="search-input-wrap">
+          <input
+            className="input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search titles"
+            autoComplete="off"
+          />
+          {query && (
+            <button className="input-clear" type="button" onClick={() => setQuery("")} aria-label="Clear search">
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </form>
       {query.trim() ? (
         <TitleCollection
@@ -1521,7 +1569,7 @@ function RecommendationsPage() {
       )}
       {selected && (
         <section className="selected-rec-base">
-          <MosaicCover items={[selected]} title={selected.display_title} />
+          <Cover series={selected} priority />
           <div>
             <span className="muted tiny">Selected</span>
             <h2>{selected.display_title}</h2>
@@ -1531,7 +1579,6 @@ function RecommendationsPage() {
       )}
       {selected &&
         store.settings.recommendationShelves.map((shelf) => {
-          const items = recommendationItems(selected, shelf, store).slice(0, 20);
           const recFeed = createFeed(shelf.name);
           recFeed.id = `recommendation-${shelf.id}-${selected.id}`;
           recFeed.view = { ...recFeed.view, gridColumns: 3 };
@@ -1555,12 +1602,7 @@ function RecommendationsPage() {
                   <Trash2 size={16} />
                 </button>
               </div>
-              <TitleCollection
-                items={items}
-                feed={recFeed}
-                history={store.history}
-                latestDate={store.syncMeta?.historyLastDate}
-              />
+              <RecommendationResults base={selected} shelf={shelf} feed={recFeed} limit={20} />
             </section>
           );
         })}
@@ -1604,6 +1646,58 @@ function recommendationItems(base: SeriesCatalog, shelf: RecommendationShelf, st
   const ranked = rankPool(buildPool(shelf.metricRanges));
   if (ranked.length || !shelf.metricRanges.length) return ranked;
   return rankPool(buildPool([]));
+}
+
+function RecommendationResults({
+  base,
+  shelf,
+  feed,
+  limit,
+}: {
+  base: SeriesCatalog;
+  shelf: RecommendationShelf;
+  feed: Feed;
+  limit: number;
+}) {
+  const store = useAppStore();
+  const [items, setItems] = useState<SeriesCatalog[] | null>(null);
+  const shelfKey = JSON.stringify(shelf);
+
+  useEffect(() => {
+    let cancelled = false;
+    setItems(null);
+    const handle = window.setTimeout(() => {
+      if (cancelled) return;
+      const ranked = recommendationItems(base, shelf, store).slice(0, limit);
+      if (!cancelled) setItems(ranked);
+    }, 24);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [
+    base,
+    base.id,
+    feed.id,
+    limit,
+    shelf,
+    shelfKey,
+    store,
+    store.catalog,
+    store.history,
+    store.labels,
+    store.recommendationFeatures,
+    store.settings,
+    store.syncMeta?.historyFirstDate,
+    store.syncMeta?.historyLastDate,
+    store.tags,
+  ]);
+
+  if (items == null) {
+    return <div className="inline-loading muted tiny">Finding close matches...</div>;
+  }
+
+  return <TitleCollection items={items} feed={feed} history={store.history} latestDate={store.syncMeta?.historyLastDate} />;
 }
 
 function RecommendationShelfEditor({
@@ -1890,22 +1984,26 @@ function TitleDetailPage() {
     };
   }, [id, store.settings.dataSourceUrl]);
 
-  const series = detail && catalogItem
-    ? {
-        ...detail,
-        display_title: resolveDisplayTitle(detail, catalogItem),
-        stats: catalogItem.stats,
-        analytics: catalogItem.analytics,
-        source: catalogItem.source ?? detail.source,
-        published: catalogItem.published ?? detail.published,
-        last_updated_at: catalogItem.last_updated_at ?? detail.last_updated_at,
-        authors: catalogItem.authors?.length ? catalogItem.authors : detail.authors,
-        artists: catalogItem.artists?.length ? catalogItem.artists : detail.artists,
-        links: { ...(detail.links ?? {}), ...(catalogItem.links ?? {}) },
-      }
-    : detail
-      ? { ...detail, display_title: resolveDisplayTitle(detail) }
-      : catalogItem;
+  const series = useMemo(
+    () =>
+      detail && catalogItem
+        ? {
+            ...detail,
+            display_title: resolveDisplayTitle(detail, catalogItem),
+            stats: catalogItem.stats,
+            analytics: catalogItem.analytics,
+            source: catalogItem.source ?? detail.source,
+            published: catalogItem.published ?? detail.published,
+            last_updated_at: catalogItem.last_updated_at ?? detail.last_updated_at,
+            authors: catalogItem.authors?.length ? catalogItem.authors : detail.authors,
+            artists: catalogItem.artists?.length ? catalogItem.artists : detail.artists,
+            links: { ...(detail.links ?? {}), ...(catalogItem.links ?? {}) },
+          }
+        : detail
+          ? { ...detail, display_title: resolveDisplayTitle(detail) }
+          : catalogItem,
+    [catalogItem, detail],
+  );
   if (!series) {
     return (
       <div className="page">
@@ -1946,18 +2044,13 @@ function TitleDetailPage() {
           </p>
         </div>
       </section>
-      <section className="detail-stat-grid">
-        {(["fanFavouriteRaw", "popularity", "favourites"] as MetricId[]).map((metric) => (
-          <div className="detail-stat" key={metric}>
-            <strong>{formatMetricValue(series, metric, store.history, store.syncMeta?.historyLastDate)}</strong>
-            <span>{metricDefinition(metric).shortLabel}</span>
-          </div>
-        ))}
-      </section>
+      <DetailStats series={series} visible={visible} history={store.history} latestDate={store.syncMeta?.historyLastDate} />
       {visible.genreTags && <section className="detail-block"><GenreChips series={series} tagsById={tagsById} /></section>}
-      <section className="detail-block detail-links">
-        <DetailLinks series={series} />
-      </section>
+      {visible.links && (
+        <section className="detail-block detail-links">
+          <DetailLinks series={series} />
+        </section>
+      )}
       {visible.description && detail?.description && (
         <section className="detail-block">
           <h2 className="section-title">Description</h2>
@@ -1988,14 +2081,13 @@ function TitleDetailPage() {
           </button>
         </div>
         {store.settings.recommendationShelves.slice(0, showAllRecommendations ? undefined : 1).map((shelf) => {
-          const items = recommendationItems(series, shelf, store).slice(0, showAllRecommendations ? 20 : 6);
           const recFeed = createFeed(shelf.name);
           recFeed.id = `detail-rec-${series.id}-${shelf.id}`;
           recFeed.view.gridColumns = 3;
           return (
             <div className="detail-rec-section" key={shelf.id}>
               <h3>{shelf.name}</h3>
-              <TitleCollection items={items} feed={recFeed} history={store.history} latestDate={store.syncMeta?.historyLastDate} />
+              <RecommendationResults base={series} shelf={shelf} feed={recFeed} limit={showAllRecommendations ? 20 : 6} />
             </div>
           );
         })}
@@ -2024,6 +2116,41 @@ function RichDescription({ text }: { text: string }) {
         <p key={`${index}-${paragraph.slice(0, 16)}`}>{renderInlineMarkdown(paragraph)}</p>
       ))}
     </div>
+  );
+}
+
+function DetailStats({
+  series,
+  visible,
+  history,
+  latestDate,
+}: {
+  series: SeriesCatalog;
+  visible: AppSettings["detailVisible"];
+  history: HistoryMap;
+  latestDate?: string | null;
+}) {
+  const metrics: MetricId[] = [
+    ...(visible.discoveryMetrics ? (["fanFavouriteDiscoveryPercentile"] as MetricId[]) : []),
+    ...(visible.popularity ? (["popularity"] as MetricId[]) : []),
+    ...(visible.favourites ? (["favourites"] as MetricId[]) : []),
+    ...(visible.meanScore ? (["meanScore"] as MetricId[]) : []),
+    ...(visible.fanFavouriteRatio ? (["fanFavouriteRaw"] as MetricId[]) : []),
+    ...(visible.growthNumbers ? (["popularityGrowth", "favouritesGrowth"] as MetricId[]) : []),
+  ].slice(0, 6);
+  const values = metrics
+    .map((metric) => ({ metric, value: formatMetricValue(series, metric, history, latestDate) }))
+    .filter((item) => item.value !== "n/a");
+  if (!values.length) return null;
+  return (
+    <section className={`detail-stat-grid detail-stat-count-${Math.min(values.length, 3)}`}>
+      {values.map(({ metric, value }) => (
+        <div className="detail-stat" key={metric}>
+          <strong>{value}</strong>
+          <span>{metricDefinition(metric).shortLabel}</span>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -2100,6 +2227,12 @@ function DetailSettingsDrawer({
     ["allTags", "All tags", "Show every catalog tag."],
     ["authorsArtists", "Creators", "Show authors and artists."],
     ["links", "External links", "Show MangaBaka, AniList, and other sources."],
+    ["discoveryMetrics", "Discovery percentile", "Show DiscPct in the stat row."],
+    ["popularity", "Popularity", "Show AniList popularity."],
+    ["favourites", "Favourites", "Show AniList favourites."],
+    ["meanScore", "Mean score", "Show AniList mean score."],
+    ["fanFavouriteRatio", "Fan percent", "Show favourites divided by popularity."],
+    ["growthNumbers", "Growth stats", "Show available historical movement stats."],
     ["status", "Status", "Show publication status."],
     ["year", "Year", "Show release year."],
     ["chapters", "Chapters", "Show chapter count when available."],
