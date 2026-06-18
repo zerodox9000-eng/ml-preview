@@ -102,12 +102,12 @@ function AppFrame() {
   useEffect(() => {
     document.documentElement.style.setProperty("--accent", store.settings.accentColor);
     document.documentElement.dataset.motion = store.settings.motionMode;
-    document.title = store.settings.appName || "Manhwa Lib";
+    document.title = "PREVIEW | " + (store.settings.appName || "Manhwa Lib");
   }, [store.settings.accentColor, store.settings.appName, store.settings.motionMode]);
 
   return (
     <div className="app-shell">
-      <SessionRestorer />
+      {/* Preview: session restore disabled */}
       <main>
         <Routes>
           <Route path="/" element={<HomePage />} />

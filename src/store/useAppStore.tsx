@@ -218,8 +218,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }));
   const [activeFeedId, setActiveFeedId] = useState<string | null>(
     openLatestFeed
-      ? latestFeedId(hasSavedState && local.feeds?.length ? latestFirstFeeds(local.feeds) : defaultFeeds)
-      : local.activeFeedId ?? (hasSavedState ? null : latestFeedId(defaultFeeds)),
+      ? latestFeedId(hasSavedState && defaultFeeds /* preview: always use defaults */)
+      : latestFeedId(defaultFeeds) /* preview: always first feed */,
   );
   const [syncStatus, setSyncStatus] = useState("");
 
