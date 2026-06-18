@@ -292,6 +292,8 @@ export interface AppSettings {
   appName: string;
   themeMode: ThemeMode;
   accentColor: string;
+  feedSwipeLoop: boolean;
+  motionMode: "fast" | "smooth" | "off";
   dataSourceUrl: string;
   adultUnlocked: boolean;
   contentRatings: ContentRating[];

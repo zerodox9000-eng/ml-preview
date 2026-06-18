@@ -1,5 +1,11 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Switch from "@radix-ui/react-switch";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import type { Swiper as SwiperInstance } from "swiper";
+import { Virtual } from "swiper/modules";
+import { Swiper, SwiperSlide } from "swiper/react";
+import "swiper/css";
+import "swiper/css/virtual";
 import {
   ArrowLeft,
   Check,
@@ -24,7 +30,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   HashRouter,
   Link,
@@ -43,6 +49,7 @@ import { formatMetricValue, historyDeltaForWindow, METRIC_DEFINITIONS, metricDef
 import { rankRecommendations } from "./domain/recommendations";
 import { resolveDisplayTitle } from "./domain/catalog";
 import { decodeSharePayload, exportCsv, makeShareUrl, type SharePayload } from "./domain/share";
+import { createId } from "./domain/ids";
 import type {
   AppSettings,
   ContentRating,
@@ -75,6 +82,14 @@ const resetPageScroll = () => window.scrollTo({ top: 0, left: 0, behavior: "auto
 
 const SESSION_RESTORE_KEY = "manhwa-library-route-v1";
 
+function isFreshLatestUrl(search = window.location.hash): boolean {
+  return search.includes("fresh=latest");
+}
+
+function findLatestFeedId(feeds: Feed[]): string | null {
+  return feeds.find((feed) => /latest/i.test(feed.name))?.id ?? feeds[0]?.id ?? null;
+}
+
 function App() {
   return (
     <AppStoreProvider>
@@ -91,8 +106,9 @@ function AppFrame() {
 
   useEffect(() => {
     document.documentElement.style.setProperty("--accent", store.settings.accentColor);
+    document.documentElement.dataset.motion = store.settings.motionMode;
     document.title = store.settings.appName || "Manhwa Lib";
-  }, [store.settings.accentColor, store.settings.appName]);
+  }, [store.settings.accentColor, store.settings.appName, store.settings.motionMode]);
 
   return (
     <div className="app-shell">
@@ -131,9 +147,10 @@ function SessionRestorer() {
   const location = useLocation();
   const navigate = useNavigate();
   const restored = useRef(false);
+  const freshLatest = isFreshLatestUrl();
 
   useEffect(() => {
-    if (restored.current || !store.ready) return;
+    if (freshLatest || restored.current || !store.ready) return;
     restored.current = true;
     if (!store.settings.restoreLastSession) return;
     try {
@@ -143,10 +160,10 @@ function SessionRestorer() {
     } catch {
       // Bad restore metadata should never block the app.
     }
-  }, [location.pathname, location.search, navigate, store.ready, store.settings.restoreLastSession]);
+  }, [freshLatest, location.pathname, location.search, navigate, store.ready, store.settings.restoreLastSession]);
 
   useEffect(() => {
-    if (!store.settings.restoreLastSession) return;
+    if (freshLatest || !store.settings.restoreLastSession) return;
     const path = `${location.pathname}${location.search}`;
     if (location.pathname.startsWith("/title/")) {
       window.scrollTo({ top: 0, behavior: "instant" });
@@ -159,10 +176,10 @@ function SessionRestorer() {
     } catch {
       // Ignore stale restore payloads.
     }
-  }, [location.pathname, location.search, store.settings.restoreLastSession]);
+  }, [freshLatest, location.pathname, location.search, store.settings.restoreLastSession]);
 
   useEffect(() => {
-    if (!store.settings.restoreLastSession) return;
+    if (freshLatest || !store.settings.restoreLastSession) return;
     const path = `${location.pathname}${location.search}`;
     if (location.pathname.startsWith("/title/")) return;
     const save = () => {
@@ -182,7 +199,7 @@ function SessionRestorer() {
     save();
     window.addEventListener("scroll", save, { passive: true });
     return () => window.removeEventListener("scroll", save);
-  }, [location.pathname, location.search, store.settings.restoreLastSession]);
+  }, [freshLatest, location.pathname, location.search, store.settings.restoreLastSession]);
 
   return null;
 }
@@ -222,47 +239,49 @@ function BottomDrawer({
 function HomePage() {
   const store = useAppStore();
   const [editorOpen, setEditorOpen] = useState(false);
-  const pagerRef = useRef<HTMLDivElement | null>(null);
-  const pointerRef = useRef<{ id: number; x: number; y: number; mode: "pending" | "horizontal" | "vertical" } | null>(null);
-  const [pagerOffset, setPagerOffset] = useState(0);
-  const [pagerAnimating, setPagerAnimating] = useState(false);
-  const [pagerSettling, setPagerSettling] = useState(false);
+  const [draftFeed, setDraftFeed] = useState<Feed | null>(null);
   const activeFeed = store.feeds.find((feed) => feed.id === store.activeFeedId) ?? store.feeds[0] ?? null;
   const activeIndex = activeFeed ? store.feeds.findIndex((item) => item.id === activeFeed.id) : -1;
-  const previousFeed = activeIndex > 0 ? store.feeds[activeIndex - 1] : null;
-  const nextFeed = activeIndex >= 0 && activeIndex < store.feeds.length - 1 ? store.feeds[activeIndex + 1] : null;
+  const motionOff = store.settings.motionMode === "off";
+  const [swiper, setSwiper] = useState<SwiperInstance | null>(null);
+  const slideSpeed = store.settings.motionMode === "smooth" ? 240 : store.settings.motionMode === "off" ? 0 : 150;
+  const showFeedSkeleton = !store.ready || store.dataQuality === "loading" || (isFreshLatestUrl() && store.dataQuality === "bundled");
 
   useEffect(() => {
-    if (!store.activeFeedId && store.feeds[0]) store.setActiveFeedId(store.feeds[0].id);
+    if (!store.activeFeedId && store.feeds[0]) store.setActiveFeedId(findLatestFeedId(store.feeds));
   }, [store]);
 
-  const settlePager = () => {
-    setPagerAnimating(true);
-    setPagerOffset(0);
-    window.setTimeout(() => setPagerAnimating(false), 220);
-  };
-
-  const finishPager = (targetIndex: number, finalOffset: number) => {
-    setPagerAnimating(true);
-    setPagerSettling(true);
-    setPagerOffset(finalOffset);
-    window.setTimeout(() => {
+  const selectFeedIndex = useCallback(
+    (index: number) => {
+      const feed = store.feeds[index];
+      if (!feed) return;
       resetPageScroll();
-      store.setActiveFeedId(store.feeds[targetIndex].id);
-      setPagerAnimating(false);
-      setPagerOffset(0);
-      window.setTimeout(() => setPagerSettling(false), 90);
-    }, 210);
-  };
+      if (feed.id !== store.activeFeedId) store.setActiveFeedId(feed.id);
+    },
+    [store],
+  );
+
+  useEffect(() => {
+    if (!swiper || activeIndex < 0 || swiper.destroyed) return;
+    if (swiper.realIndex !== activeIndex) swiper.slideToLoop(activeIndex, motionOff ? 0 : slideSpeed);
+  }, [activeIndex, motionOff, slideSpeed, swiper]);
+
+  const handleTabSelect = useCallback(
+    (index: number) => {
+      if (swiper && !swiper.destroyed) {
+        swiper.slideToLoop(index, motionOff ? 0 : slideSpeed);
+        return;
+      }
+      selectFeedIndex(index);
+    },
+    [motionOff, selectFeedIndex, slideSpeed, swiper],
+  );
 
   return (
     <div className="page">
-      <FeedTabs />
-      {!store.ready ? (
-        <div className="empty-state">
-          <strong>Loading local library</strong>
-          <span className="muted">{store.syncStatus || "Opening IndexedDB cache"}</span>
-        </div>
+      <FeedTabs onSelect={handleTabSelect} />
+      {showFeedSkeleton ? (
+        <FeedGridSkeleton label={store.syncStatus || "Loading library"} columns={activeFeed?.view.gridColumns ?? 3} />
       ) : !activeFeed ? (
         <div className="empty-state">
           <Library size={34} />
@@ -270,97 +289,88 @@ function HomePage() {
           <p className="muted">
             Home stays empty until you create a feed, so every shelf here is intentional instead of a random default.
           </p>
-          <button className="button primary" type="button" onClick={() => setEditorOpen(true)}>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => {
+              setDraftFeed(createFeed("My Feed"));
+              setEditorOpen(true);
+            }}
+          >
             <Plus size={18} /> Create feed
           </button>
         </div>
       ) : (
-        <div
-          ref={pagerRef}
-          className={`feed-pager ${pagerAnimating ? "animating" : ""} ${pagerSettling ? "settling" : ""}`}
-          style={{ "--pager-offset": `${pagerOffset}px` } as React.CSSProperties}
-          onPointerDown={(event) => {
-            if (!event.isPrimary || event.pointerType === "mouse") return;
-            pointerRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, mode: "pending" };
-          }}
-          onPointerMove={(event) => {
-            const start = pointerRef.current;
-            if (!start || start.id !== event.pointerId || !event.isPrimary) return;
-            const dx = event.clientX - start.x;
-            const dy = event.clientY - start.y;
-            if (start.mode === "pending") {
-              if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-              start.mode = Math.abs(dx) > Math.abs(dy) * 1.35 ? "horizontal" : "vertical";
-              if (start.mode === "horizontal") event.currentTarget.setPointerCapture(event.pointerId);
-            }
-            if (start.mode !== "horizontal") return;
-            event.preventDefault();
-            const canMove = dx < 0 ? Boolean(nextFeed) : Boolean(previousFeed);
-            const resisted = canMove ? dx : dx * 0.28;
-            const width = pagerRef.current?.clientWidth || window.innerWidth || 360;
-            setPagerAnimating(false);
-            setPagerOffset(Math.max(-width, Math.min(width, resisted)));
-          }}
-          onPointerUp={(event) => {
-            const start = pointerRef.current;
-            pointerRef.current = null;
-            if (!start || start.id !== event.pointerId) return;
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-            const dx = event.clientX - start.x;
-            const dy = event.clientY - start.y;
-            const width = pagerRef.current?.clientWidth || window.innerWidth || 360;
-            if (start.mode !== "horizontal" || Math.abs(dx) < Math.min(96, width * 0.24) || Math.abs(dx) < Math.abs(dy) * 1.35) {
-              settlePager();
-              return;
-            }
-            const targetIndex = dx < 0 ? activeIndex + 1 : activeIndex - 1;
-            if (targetIndex < 0 || targetIndex >= store.feeds.length) {
-              settlePager();
-              return;
-            }
-            finishPager(targetIndex, dx < 0 ? -width : width);
-          }}
-          onPointerCancel={settlePager}
-        >
-          <div className="feed-pager-track">
-            <div className="feed-pager-panel">{previousFeed ? <BlankFeedPanel /> : null}</div>
-            <div className="feed-pager-panel">{activeFeed ? <FeedView feed={activeFeed} /> : null}</div>
-            <div className="feed-pager-panel">{nextFeed ? <BlankFeedPanel /> : null}</div>
-          </div>
+        <div className="feed-pager">
+          <Swiper
+            modules={[Virtual]}
+            className="feed-swiper"
+            slidesPerView={1}
+            initialSlide={Math.max(activeIndex, 0)}
+            speed={slideSpeed}
+            loop={store.settings.feedSwipeLoop && store.feeds.length > 1}
+            threshold={12}
+            resistanceRatio={0.55}
+            virtual
+            onSwiper={setSwiper}
+            onSlideChange={(instance) => selectFeedIndex(instance.realIndex)}
+          >
+            {store.feeds.map((feed, index) => (
+              <SwiperSlide className="feed-pager-slide" key={feed.id} virtualIndex={index}>
+                {index === activeIndex ? <FeedView feed={feed} /> : <FeedSlidePlaceholder feed={feed} />}
+              </SwiperSlide>
+            ))}
+          </Swiper>
         </div>
       )}
-      <BottomDrawer title="Create Feed" open={editorOpen} onOpenChange={setEditorOpen}>
-        <FeedEditor
-          feed={createFeed("My Feed")}
-          onCancel={() => setEditorOpen(false)}
-          onSave={(feed) => {
-            store.upsertFeed(feed);
-            setEditorOpen(false);
-          }}
-        />
+      <BottomDrawer
+        title="Create Feed"
+        open={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) setDraftFeed(null);
+        }}
+      >
+        {draftFeed && (
+          <FeedEditor
+            feed={draftFeed}
+            onCancel={() => {
+              setEditorOpen(false);
+              setDraftFeed(null);
+            }}
+            onSave={(feed) => {
+              store.upsertFeed(feed);
+              setEditorOpen(false);
+              setDraftFeed(null);
+            }}
+          />
+        )}
       </BottomDrawer>
     </div>
   );
 }
 
-function FeedTabs() {
+function FeedTabs({ onSelect }: { onSelect: (index: number) => void }) {
   const store = useAppStore();
   const activeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [store.activeFeedId, store.feeds.length]);
+    activeRef.current?.scrollIntoView({
+      behavior: store.settings.motionMode === "off" ? "auto" : "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [store.activeFeedId, store.feeds.length, store.settings.motionMode]);
   if (store.feeds.length === 0) return null;
   return (
     <div className="feed-tabs" aria-label="Feed tabs">
-      {store.feeds.map((feed) => (
+      {store.feeds.map((feed, index) => (
         <button
           type="button"
           key={feed.id}
           ref={store.activeFeedId === feed.id ? activeRef : null}
           className={`feed-tab ${store.activeFeedId === feed.id ? "active" : ""}`}
           onClick={() => {
-            store.setActiveFeedId(feed.id);
-            resetPageScroll();
+            onSelect(index);
           }}
         >
           <span className="feed-tab-title">{feed.name}</span>
@@ -370,8 +380,33 @@ function FeedTabs() {
   );
 }
 
-function BlankFeedPanel() {
-  return <section className="blank-feed-panel" aria-hidden="true" />;
+function FeedSlidePlaceholder({ feed }: { feed?: Feed }) {
+  return (
+    <section className="feed-slide-placeholder" aria-hidden="true">
+      {feed && <span>{feed.name}</span>}
+    </section>
+  );
+}
+
+function FeedGridSkeleton({ label, columns }: { label: string; columns: FeedViewSettings["gridColumns"] }) {
+  return (
+    <section className="section feed-grid-skeleton" aria-busy="true">
+      <div className="feed-skeleton-header">
+        <span className="skeleton-line wide" />
+        <span className="skeleton-line" />
+        <span className="muted tiny">{label}</span>
+      </div>
+      <div className={`title-grid columns-${columns}`} style={{ "--grid-columns": columns } as React.CSSProperties}>
+        {Array.from({ length: columns * 5 }).map((_, index) => (
+          <div className="title-card-wrap skeleton-card" key={index}>
+            <div className="cover-wrap skeleton-box" />
+            <span className="skeleton-line" />
+            <span className="skeleton-line short" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function FeedView({ feed }: { feed: Feed }) {
@@ -486,17 +521,45 @@ function TitleCollection({
   history: HistoryMap;
   latestDate?: string | null;
 }) {
-  const pageSize = feed.view.gridColumns >= 5 ? 60 : feed.view.gridColumns === 4 ? 72 : 120;
-  const countKey = `manhwa-visible-count:${feed.id}:${feed.view.gridColumns}`;
-  const [visibleCount, setVisibleCount] = useState(() => Number(sessionStorage.getItem(countKey)) || pageSize);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const columns = feed.view.gridColumns;
+  const [gridWidth, setGridWidth] = useState(() => (typeof window === "undefined" ? 390 : Math.min(window.innerWidth - 28, 1160)));
+  const [scrollMargin, setScrollMargin] = useState(0);
   useEffect(() => {
-    const saved = Number(sessionStorage.getItem(countKey)) || pageSize;
-    setVisibleCount(Math.max(pageSize, Math.min(saved, Math.max(pageSize, items.length))));
-  }, [countKey, items.length, pageSize]);
+    const update = () => {
+      const width = gridRef.current?.clientWidth;
+      setGridWidth(width && width > 0 ? width : Math.min(window.innerWidth - 28, 1160));
+    };
+    update();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    if (gridRef.current) observer?.observe(gridRef.current);
+    window.addEventListener("resize", update, { passive: true });
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
   useEffect(() => {
-    sessionStorage.setItem(countKey, String(visibleCount));
-  }, [countKey, visibleCount]);
-  const visibleItems = items.slice(0, visibleCount);
+    const update = () => setScrollMargin(gridRef.current?.offsetTop ?? 0);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [items.length, columns]);
+  const gridGap = columns >= 4 ? 9 : 12;
+  const rowHeight = useMemo(() => {
+    const contentWidth = Math.max(292, gridWidth);
+    const cardWidth = Math.max(48, (contentWidth - gridGap * (columns - 1)) / columns);
+    const coverHeight = cardWidth / 0.72;
+    const titleBlock = columns >= 5 ? 34 : columns >= 4 ? 38 : 48;
+    return Math.ceil(coverHeight + titleBlock + gridGap);
+  }, [columns, gridGap, gridWidth]);
+  const rowCount = Math.ceil(items.length / columns);
+  const rowVirtualizer = useWindowVirtualizer({
+    count: rowCount,
+    estimateSize: () => rowHeight,
+    overscan: 5,
+    scrollMargin,
+  });
   const metricWindow = useMemo(() => resolveRollingWindow(feed.filters.rolling, latestDate), [feed.filters.rolling, latestDate]);
 
   if (items.length === 0) {
@@ -509,16 +572,31 @@ function TitleCollection({
     );
   }
   return (
-    <>
+    <div
+      ref={gridRef}
+      className={`virtual-title-grid columns-${columns} density-${feed.view.gridDensity}`}
+      style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+    >
+      {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+        const rowStart = virtualRow.index * columns;
+        const rowItems = items.slice(rowStart, rowStart + columns);
+        return (
       <div
-        className={`title-grid columns-${feed.view.gridColumns} density-${feed.view.gridDensity}`}
-        style={{ "--grid-columns": feed.view.gridColumns } as React.CSSProperties}
+            className={`title-grid virtual-title-grid-row columns-${columns} density-${feed.view.gridDensity}`}
+            data-index={virtualRow.index}
+            key={virtualRow.key}
+            style={
+              {
+                "--grid-columns": columns,
+                transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+              } as React.CSSProperties
+            }
       >
-        {visibleItems.map((series, index) => (
+            {rowItems.map((series, index) => (
           <TitleCard
             key={series.id}
             series={series}
-            rank={index + 1}
+                rank={rowStart + index + 1}
             view={feed.view}
             history={history}
             latestDate={latestDate}
@@ -526,18 +604,8 @@ function TitleCollection({
           />
         ))}
       </div>
-      <LoadMore visibleCount={visibleCount} total={items.length} onMore={() => setVisibleCount((count) => count + pageSize)} />
-    </>
-  );
-}
-
-function LoadMore({ visibleCount, total, onMore }: { visibleCount: number; total: number; onMore: () => void }) {
-  if (visibleCount >= total) return null;
-  return (
-    <div className="toolbar" style={{ justifyContent: "center", margin: "18px 0" }}>
-      <button className="button" type="button" onClick={onMore}>
-        Load more ({Math.min(visibleCount, total).toLocaleString()} / {total.toLocaleString()})
-      </button>
+        );
+      })}
     </div>
   );
 }
@@ -1142,7 +1210,7 @@ function FeedEditor({ feed, onSave, onCancel }: { feed: Feed; onSave: (feed: Fee
         <button
           className="button"
           type="button"
-          onClick={() => setDraft((current) => ({ ...current, sort: [...current.sort, { ...DEFAULT_SORT[0], id: crypto.randomUUID() }] }))}
+          onClick={() => setDraft((current) => ({ ...current, sort: [...current.sort, { ...DEFAULT_SORT[0], id: createId() }] }))}
         >
           <Plus size={16} /> Add sort
         </button>
@@ -1230,7 +1298,7 @@ function MetricRangeEditor({ ranges, onChange }: { ranges: MetricRange[]; onChan
   const addRange = () => {
     const used = new Set(ranges.map((range) => range.metric));
     const nextMetric = RANGE_METRICS.find((metric) => !used.has(metric.id))?.id ?? "fanFavouriteRaw";
-    onChange([...ranges, { id: crypto.randomUUID(), metric: nextMetric, min: null, max: null }]);
+    onChange([...ranges, { id: createId(), metric: nextMetric, min: null, max: null }]);
   };
   const update = (id: string, patch: Partial<MetricRange>) => {
     onChange(ranges.map((range) => (range.id === id ? { ...range, ...patch } : range)));
@@ -1685,12 +1753,12 @@ function RecommendationShelfEditor({
   const [draft, setDraft] = useState<RecommendationShelf>(
     () =>
       shelf ?? {
-        id: crypto.randomUUID(),
+        id: createId(),
         name: "Custom matches",
         statusMode: "any",
         dateMode: "any",
         sourceModes: ["anilist", "non-anilist"],
-        sort: [{ id: crypto.randomUUID(), metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
+        sort: [{ id: createId(), metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
         metricRanges: [],
       },
   );
@@ -1734,7 +1802,7 @@ function RecommendationShelfEditor({
             onClick={() =>
               setDraft({
                 ...draft,
-                sort: [...draft.sort, { id: crypto.randomUUID(), metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
+                sort: [...draft.sort, { id: createId(), metric: "fanFavouriteDiscoveryPercentile", direction: "desc" }],
               })
             }
           >
@@ -1834,6 +1902,42 @@ function SettingsPage() {
 
       <SettingsSection title="Session">
         <ToggleRow label="Restore last session" description="Reopen at the prior route/feed/scroll when possible." value={store.settings.restoreLastSession} onChange={(restoreLastSession) => store.updateSettings({ restoreLastSession })} />
+        <button
+          className="button"
+          type="button"
+          onClick={() => {
+            localStorage.removeItem("manhwa-library-state-v1");
+            localStorage.removeItem(SESSION_RESTORE_KEY);
+            sessionStorage.clear();
+            window.location.replace(`${window.location.origin}${window.location.pathname}#/?fresh=latest`);
+          }}
+        >
+          Reset test state
+        </button>
+      </SettingsSection>
+
+      <SettingsSection title="Motion & Navigation">
+        <ToggleRow
+          label="Feed loop"
+          description="Swipe past the last feed to wrap back to the first feed."
+          value={store.settings.feedSwipeLoop}
+          onChange={(feedSwipeLoop) => store.updateSettings({ feedSwipeLoop })}
+        />
+        <div className="field">
+          <label>Motion speed</label>
+          <div className="segmented">
+            {(["fast", "smooth", "off"] as const).map((motionMode) => (
+              <button
+                key={motionMode}
+                type="button"
+                className={store.settings.motionMode === motionMode ? "active" : ""}
+                onClick={() => store.updateSettings({ motionMode })}
+              >
+                {motionMode === "fast" ? "Fast" : motionMode === "smooth" ? "Smooth" : "Off"}
+              </button>
+            ))}
+          </div>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Search">

@@ -8,6 +8,7 @@ import type {
   SortRule,
   VisibleTitleFields,
 } from "./types";
+import { createId } from "./ids";
 
 export const RAW_EXPORT_BASE =
   "https://raw.githubusercontent.com/zerodox9000-eng/manhwa_db/main/db/exports/frontend";
@@ -123,6 +124,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appName: "Manhwa Lib",
   themeMode: "dark",
   accentColor: "#ff006e",
+  feedSwipeLoop: false,
+  motionMode: "fast",
   dataSourceUrl: RAW_EXPORT_BASE,
   adultUnlocked: false,
   contentRatings: ["safe", "suggestive"],
@@ -155,7 +158,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export function createFeed(name = "New Feed"): Feed {
   const now = new Date().toISOString();
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     description: "",
     showDescription: false,
@@ -167,7 +170,7 @@ export function createFeed(name = "New Feed"): Feed {
       contentRatings: [...DEFAULT_FILTERS.contentRatings],
       metricRanges: [],
     },
-    sort: DEFAULT_SORT.map((rule) => ({ ...rule, id: crypto.randomUUID() })),
+    sort: DEFAULT_SORT.map((rule) => ({ ...rule, id: createId() })),
     view: {
       ...DEFAULT_FEED_VIEW,
       metricSlots: [...DEFAULT_FEED_VIEW.metricSlots],

@@ -5,6 +5,25 @@ async function mockBackendData(page: Page) {
   const gzipJson = (value: unknown) => gzipSync(Buffer.from(JSON.stringify(value)));
   const catalog = [
     {
+      id: 9,
+      display_title: "Latest Mock Manhwa",
+      cover: null,
+      year: 2026,
+      status: "releasing",
+      content_rating: "safe",
+      total_chapters: "12",
+      tag_ids: [1, 2],
+      stats: { popularity: null, favourites: null, meanScore: null },
+      analytics: { fanFavouriteRaw: null, fanFavouriteDiscoveryScore: null },
+      published: { start_date: null, end_date: null },
+      last_updated_at: "2026-06-10T12:00:00.000Z",
+      mangabaka_latest_rank: 1,
+      authors: ["QA"],
+      artists: ["QA"],
+      links: { mangabaka: "https://mangabaka.org/9" },
+      source: {},
+    },
+    {
       id: 1252,
       display_title: "Solo Leveling: Ragnarok",
       cover: null,
@@ -132,9 +151,9 @@ test.beforeEach(async ({ page }) => {
 test("mobile feeds, search, detail, recommendations, and navigation state work", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Trending Mainstream" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Latest Listings" })).toBeVisible();
   await expect(page.getByTestId("title-card").first()).toBeVisible();
-  await expect(page.locator(".compact-metrics").first()).toContainText("Fan Rank");
+  await expect(page.locator(".compact-metrics").first()).toContainText("Year");
   await expect(page.locator(".bottom-nav")).not.toContainText("Folders");
 
   await page.getByRole("link", { name: "Search" }).click();

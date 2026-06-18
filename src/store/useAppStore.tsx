@@ -19,8 +19,37 @@ import { loadBundledCatalog, loadCachedData, syncFrontendData } from "../service
 
 const STORAGE_KEY = "manhwa-library-state-v1";
 
+type DataQuality = "loading" | "bundled" | "cached" | "synced";
+
+function isFreshLatestRequest(): boolean {
+  return typeof window !== "undefined" && window.location.hash.includes("fresh=latest");
+}
+
+function isDevLatestRequest(): boolean {
+  if (typeof window === "undefined" || !import.meta.env.DEV) return false;
+  const hash = window.location.hash || "#/";
+  return hash === "#/" || hash === "#" || hash === "" || hash.startsWith("#/?");
+}
+
+function shouldOpenLatestFeed(): boolean {
+  return isFreshLatestRequest() || isDevLatestRequest();
+}
+
+function latestFirstFeeds(feeds: Feed[]): Feed[] {
+  const latestIndex = feeds.findIndex((feed) => /latest/i.test(feed.name));
+  if (latestIndex <= 0) return feeds;
+  const copy = [...feeds];
+  const [latest] = copy.splice(latestIndex, 1);
+  return [latest, ...copy];
+}
+
+function latestFeedId(feeds: Feed[]): string | null {
+  return feeds.find((feed) => /latest/i.test(feed.name))?.id ?? feeds[0]?.id ?? null;
+}
+
 interface StoreState {
   ready: boolean;
+  dataQuality: DataQuality;
   catalog: SeriesCatalog[];
   tags: TagNode[];
   history: HistoryMap;
@@ -167,21 +196,31 @@ export function normalizeFeed(feed: Feed, options: { preserveMetricSlots?: boole
 const AppStoreContext = createContext<StoreState | null>(null);
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
+  const openLatestFeed = useMemo(shouldOpenLatestFeed, []);
+  const defaultFeeds = useMemo(() => latestFirstFeeds(defaultFeedsJson as Feed[]), []);
   const local = useMemo(loadLocalSnapshot, []);
   const hasSavedState = useMemo(() => localStorage.getItem(STORAGE_KEY) != null, []);
   const [ready, setReady] = useState(false);
+  const [dataQuality, setDataQuality] = useState<DataQuality>("loading");
   const [catalog, setCatalog] = useState<SeriesCatalog[]>([]);
   const [tags, setTags] = useState<TagNode[]>([]);
   const [history, setHistory] = useState<HistoryMap>({});
   const [recommendationFeatures, setRecommendationFeatures] = useState<RecommendationFeature[]>([]);
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
   const [feeds, setFeeds] = useState<Feed[]>(
-    (hasSavedState ? local.feeds ?? [] : (defaultFeedsJson as Feed[])).map((feed) => normalizeFeed(feed)),
+    (hasSavedState ? local.feeds ?? [] : defaultFeeds).map((feed) => normalizeFeed(feed)),
   );
   const [folders, setFolders] = useState<Folder[]>(local.folders ?? []);
   const [labels, setLabels] = useState<UserLabel[]>(local.labels ?? []);
-  const [settings, setSettings] = useState<AppSettings>(mergeSettings(local.settings));
-  const [activeFeedId, setActiveFeedId] = useState<string | null>(local.activeFeedId ?? null);
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...mergeSettings(local.settings),
+    restoreLastSession: openLatestFeed ? false : mergeSettings(local.settings).restoreLastSession,
+  }));
+  const [activeFeedId, setActiveFeedId] = useState<string | null>(
+    openLatestFeed
+      ? latestFeedId(hasSavedState && local.feeds?.length ? latestFirstFeeds(local.feeds) : defaultFeeds)
+      : local.activeFeedId ?? (hasSavedState ? null : latestFeedId(defaultFeeds)),
+  );
   const [syncStatus, setSyncStatus] = useState("");
 
   useEffect(() => {
@@ -204,6 +243,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             versionHash: `bundled-${bundledCatalog.length}`,
             source: "Bundled query index",
           });
+          setDataQuality("bundled");
           setReady(true);
         });
       }, 260);
@@ -220,6 +260,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setHistory(cachedHistory);
         setRecommendationFeatures(cachedRecommendationFeatures);
         setSyncMeta(meta);
+        setDataQuality("cached");
       } else if (!showedBundled) {
         const bundledCatalog = await bundledCatalogPromise;
         if (bundledCatalog.length > 0) {
@@ -232,6 +273,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             versionHash: `bundled-${bundledCatalog.length}`,
             source: "Bundled query index",
           });
+          setDataQuality("bundled");
         }
       }
       setReady(true);
@@ -268,6 +310,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setSyncMeta(synced.meta);
       setSettings((current) => ({ ...current, dataSourceUrl: synced.meta.source }));
       setSyncStatus("Sync complete");
+      setDataQuality("synced");
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Sync failed");
     }
@@ -352,6 +395,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<StoreState>(
     () => ({
       ready,
+      dataQuality,
       catalog,
       tags,
       history,
@@ -377,6 +421,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       ready,
+      dataQuality,
       catalog,
       tags,
       history,
