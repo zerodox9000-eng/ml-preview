@@ -102,12 +102,12 @@ function AppFrame() {
   useEffect(() => {
     document.documentElement.style.setProperty("--accent", store.settings.accentColor);
     document.documentElement.dataset.motion = store.settings.motionMode;
-    document.title = "PREVIEW | " + (store.settings.appName || "Manhwa Lib");
+    document.title = "PREVIEW | Manhwa Lib";
   }, [store.settings.accentColor, store.settings.appName, store.settings.motionMode]);
 
   return (
     <div className="app-shell">
-      {/* Preview: session restore disabled */}
+      {/* SessionRestorer disabled */}
       <main>
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -239,20 +239,7 @@ function HomePage() {
   const feedScrollRefs = useRef(new Map<string, HTMLDivElement>());
   const settleTimer = useRef<number | null>(null);
   const restoring = useRef(true);
-  // Prevent flash of first feed when returning from detail page
-  const SAVED_FEED_KEY = 'manhwa-last-active-feed';
-  const savedFeedId = (() => {
-    try { return sessionStorage.getItem(SAVED_FEED_KEY); } catch { return null; }
-  })();
-  const resolvedFeedId = store.activeFeedId ?? savedFeedId;
-  const activeFeed = store.feeds.find((feed) => feed.id === resolvedFeedId) ?? store.feeds[0] ?? null;
-
-  // Persist active feed to sessionStorage so it survives page transitions
-  useEffect(() => {
-    if (activeFeed?.id) {
-      try { sessionStorage.setItem(SAVED_FEED_KEY, activeFeed.id); } catch {}
-    }
-  }, [activeFeed?.id]);
+  const activeFeed = store.feeds.find((feed) => feed.id === store.activeFeedId) ?? store.feeds[0] ?? null;
   const activeIndex = activeFeed ? store.feeds.findIndex((item) => item.id === activeFeed.id) : -1;
   const showFeedSkeleton = !store.ready || store.dataQuality === "loading" || store.dataQuality === "bundled";
 
