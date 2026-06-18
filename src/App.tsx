@@ -137,68 +137,6 @@ function AppFrame() {
   );
 }
 
-function SessionRestorer() {
-  const store = useAppStore();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const restored = useRef(false);
-  const freshLatest = isFreshLatestUrl();
-
-  useEffect(() => {
-    if (freshLatest || restored.current || !store.ready) return;
-    restored.current = true;
-    if (!store.settings.restoreLastSession) return;
-    try {
-      const saved = JSON.parse(localStorage.getItem(SESSION_RESTORE_KEY) ?? "{}") as { path?: string };
-      const openedAtRoot = location.pathname === "/" && !location.search && (!window.location.hash || window.location.hash === "#/");
-      if (saved.path && saved.path !== "/" && openedAtRoot) navigate(saved.path, { replace: true });
-    } catch {
-      // Bad restore metadata should never block the app.
-    }
-  }, [freshLatest, location.pathname, location.search, navigate, store.ready, store.settings.restoreLastSession]);
-
-  useEffect(() => {
-    if (freshLatest || !store.settings.restoreLastSession) return;
-    const path = `${location.pathname}${location.search}`;
-    if (location.pathname.startsWith("/title/")) {
-      window.scrollTo({ top: 0, behavior: "instant" });
-      return;
-    }
-    try {
-      const saved = JSON.parse(localStorage.getItem(SESSION_RESTORE_KEY) ?? "{}") as { scroll?: Record<string, number> };
-      const y = saved.scroll?.[path] ?? 0;
-      if (y > 0) requestAnimationFrame(() => window.scrollTo({ top: y }));
-    } catch {
-      // Ignore stale restore payloads.
-    }
-  }, [freshLatest, location.pathname, location.search, store.settings.restoreLastSession]);
-
-  useEffect(() => {
-    if (freshLatest || !store.settings.restoreLastSession) return;
-    const path = `${location.pathname}${location.search}`;
-    if (location.pathname.startsWith("/title/")) return;
-    const save = () => {
-      try {
-        const saved = JSON.parse(localStorage.getItem(SESSION_RESTORE_KEY) ?? "{}") as {
-          path?: string;
-          scroll?: Record<string, number>;
-        };
-        localStorage.setItem(
-          SESSION_RESTORE_KEY,
-          JSON.stringify({ ...saved, path, scroll: { ...(saved.scroll ?? {}), [path]: window.scrollY } }),
-        );
-      } catch {
-        // localStorage can be unavailable in private contexts.
-      }
-    };
-    save();
-    window.addEventListener("scroll", save, { passive: true });
-    return () => window.removeEventListener("scroll", save);
-  }, [freshLatest, location.pathname, location.search, store.settings.restoreLastSession]);
-
-  return null;
-}
-
 function BottomDrawer({
   title,
   open,
