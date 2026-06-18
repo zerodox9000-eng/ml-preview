@@ -1,11 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Switch from "@radix-ui/react-switch";
-import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import type { Swiper as SwiperInstance } from "swiper";
-import { Virtual } from "swiper/modules";
-import { Swiper, SwiperSlide } from "swiper/react";
-import "swiper/css";
-import "swiper/css/virtual";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowLeft,
   Check,
@@ -30,7 +25,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   HashRouter,
   Link,
@@ -240,49 +235,118 @@ function HomePage() {
   const store = useAppStore();
   const [editorOpen, setEditorOpen] = useState(false);
   const [draftFeed, setDraftFeed] = useState<Feed | null>(null);
+  const pagerRef = useRef<HTMLDivElement | null>(null);
+  const feedScrollRefs = useRef(new Map<string, HTMLDivElement>());
+  const settleTimer = useRef<number | null>(null);
+  const restoring = useRef(true);
   const activeFeed = store.feeds.find((feed) => feed.id === store.activeFeedId) ?? store.feeds[0] ?? null;
   const activeIndex = activeFeed ? store.feeds.findIndex((item) => item.id === activeFeed.id) : -1;
-  const motionOff = store.settings.motionMode === "off";
-  const [swiper, setSwiper] = useState<SwiperInstance | null>(null);
-  const slideSpeed = store.settings.motionMode === "smooth" ? 240 : store.settings.motionMode === "off" ? 0 : 150;
-  const showFeedSkeleton = !store.ready || store.dataQuality === "loading" || (isFreshLatestUrl() && store.dataQuality === "bundled");
+  const showFeedSkeleton = !store.ready || store.dataQuality === "loading" || store.dataQuality === "bundled";
 
   useEffect(() => {
     if (!store.activeFeedId && store.feeds[0]) store.setActiveFeedId(findLatestFeedId(store.feeds));
   }, [store]);
 
+  const registerFeedScroll = useCallback((feedId: string, node: HTMLDivElement | null) => {
+    if (node) feedScrollRefs.current.set(feedId, node);
+    else feedScrollRefs.current.delete(feedId);
+  }, []);
+
+  const saveFeedScroll = useCallback((feedId: string, top: number) => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("manhwa-home-feed-scroll-v1") ?? "{}") as Record<string, number>;
+      sessionStorage.setItem("manhwa-home-feed-scroll-v1", JSON.stringify({ ...saved, [feedId]: top }));
+    } catch {
+      // Ignore private-mode storage failures.
+    }
+  }, []);
+
+  const restoreFeedScroll = useCallback((feedId: string) => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("manhwa-home-feed-scroll-v1") ?? "{}") as Record<string, number>;
+      return saved[feedId] ?? 0;
+    } catch {
+      return 0;
+    }
+  }, []);
+
+  const setFeedScrollTop = useCallback(
+    (feedId: string, top: number) => {
+      const node = feedScrollRefs.current.get(feedId);
+      if (node) node.scrollTo({ top, left: 0, behavior: "auto" });
+      saveFeedScroll(feedId, top);
+    },
+    [saveFeedScroll],
+  );
+
   const selectFeedIndex = useCallback(
-    (index: number) => {
+    (index: number, options: { preserveScroll?: boolean; behavior?: ScrollBehavior } = {}) => {
       const feed = store.feeds[index];
       if (!feed) return;
-      resetPageScroll();
+      restoring.current = true;
+      if (settleTimer.current) window.clearTimeout(settleTimer.current);
+      const pager = pagerRef.current;
+      if (pager) {
+        pager.scrollTo({
+          left: pager.clientWidth * index,
+          top: 0,
+          behavior: options.behavior ?? "auto",
+        });
+      }
+      if (!options.preserveScroll) setFeedScrollTop(feed.id, 0);
       if (feed.id !== store.activeFeedId) store.setActiveFeedId(feed.id);
+      window.setTimeout(() => {
+        restoring.current = false;
+      }, 180);
     },
-    [store],
+    [setFeedScrollTop, store],
   );
 
   useEffect(() => {
-    if (!swiper || activeIndex < 0 || swiper.destroyed) return;
-    if (swiper.realIndex !== activeIndex) swiper.slideToLoop(activeIndex, motionOff ? 0 : slideSpeed);
-  }, [activeIndex, motionOff, slideSpeed, swiper]);
+    if (!activeFeed || activeIndex < 0) return;
+    restoring.current = true;
+    const top = isFreshLatestUrl() ? 0 : restoreFeedScroll(activeFeed.id);
+    const applyRestore = () => {
+      const pager = pagerRef.current;
+      if (pager) pager.scrollTo({ left: pager.clientWidth * activeIndex, top: 0, behavior: "auto" });
+      setFeedScrollTop(activeFeed.id, top);
+    };
+    requestAnimationFrame(() => {
+      applyRestore();
+      requestAnimationFrame(applyRestore);
+    });
+    const restoreTimeout = window.setTimeout(() => {
+      applyRestore();
+      restoring.current = false;
+    }, 350);
+    return () => window.clearTimeout(restoreTimeout);
+  }, [activeFeed, activeIndex, restoreFeedScroll, setFeedScrollTop]);
 
   const handleTabSelect = useCallback(
     (index: number) => {
-      if (swiper && !swiper.destroyed) {
-        swiper.slideToLoop(index, motionOff ? 0 : slideSpeed);
-        return;
-      }
       selectFeedIndex(index);
     },
-    [motionOff, selectFeedIndex, slideSpeed, swiper],
+    [selectFeedIndex],
   );
 
+  const handlePagerScroll = useCallback(() => {
+    if (restoring.current || !pagerRef.current) return;
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      const pager = pagerRef.current;
+      if (!pager || pager.clientWidth <= 0) return;
+      const index = Math.max(0, Math.min(store.feeds.length - 1, Math.round(pager.scrollLeft / pager.clientWidth)));
+      const feed = store.feeds[index];
+      if (!feed || feed.id === store.activeFeedId) return;
+      setFeedScrollTop(feed.id, 0);
+      store.setActiveFeedId(feed.id);
+    }, 90);
+  }, [setFeedScrollTop, store]);
+
   return (
-    <div className="page">
+    <div className="home-shell">
       <FeedTabs onSelect={handleTabSelect} />
-      {showFeedSkeleton ? (
-        <FeedGridSkeleton label={store.syncStatus || "Loading library"} columns={activeFeed?.view.gridColumns ?? 3} />
-      ) : !activeFeed ? (
+      {store.ready && !activeFeed ? (
         <div className="empty-state">
           <Library size={34} />
           <h1>Build your first feed</h1>
@@ -301,26 +365,23 @@ function HomePage() {
           </button>
         </div>
       ) : (
-        <div className="feed-pager">
-          <Swiper
-            modules={[Virtual]}
-            className="feed-swiper"
-            slidesPerView={1}
-            initialSlide={Math.max(activeIndex, 0)}
-            speed={slideSpeed}
-            loop={store.settings.feedSwipeLoop && store.feeds.length > 1}
-            threshold={12}
-            resistanceRatio={0.55}
-            virtual
-            onSwiper={setSwiper}
-            onSlideChange={(instance) => selectFeedIndex(instance.realIndex)}
-          >
-            {store.feeds.map((feed, index) => (
-              <SwiperSlide className="feed-pager-slide" key={feed.id} virtualIndex={index}>
-                {index === activeIndex ? <FeedView feed={feed} /> : <FeedSlidePlaceholder feed={feed} />}
-              </SwiperSlide>
-            ))}
-          </Swiper>
+        <div className="feed-pager" ref={pagerRef} onScroll={handlePagerScroll} aria-label="Feeds">
+          {(store.feeds.length ? store.feeds : [activeFeed].filter(Boolean)).map((feed, index) => {
+            if (!feed) return null;
+            const isNearActive = Math.abs(index - Math.max(activeIndex, 0)) <= 1;
+            return (
+              <HomeFeedPane
+                key={feed.id}
+                feed={feed}
+                active={feed.id === store.activeFeedId}
+                renderContent={isNearActive && !showFeedSkeleton}
+                loading={showFeedSkeleton}
+                loadingLabel={store.syncStatus || "Loading library"}
+                registerFeedScroll={registerFeedScroll}
+                saveFeedScroll={saveFeedScroll}
+              />
+            );
+          })}
         </div>
       )}
       <BottomDrawer
@@ -347,6 +408,56 @@ function HomePage() {
         )}
       </BottomDrawer>
     </div>
+  );
+}
+
+function HomeFeedPane({
+  feed,
+  active,
+  renderContent,
+  loading,
+  loadingLabel,
+  registerFeedScroll,
+  saveFeedScroll,
+}: {
+  feed: Feed;
+  active: boolean;
+  renderContent: boolean;
+  loading: boolean;
+  loadingLabel: string;
+  registerFeedScroll: (feedId: string, node: HTMLDivElement | null) => void;
+  saveFeedScroll: (feedId: string, top: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const setScrollNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node;
+      registerFeedScroll(feed.id, node);
+    },
+    [feed.id, registerFeedScroll],
+  );
+
+  return (
+    <section className="feed-pane" aria-hidden={!active}>
+      <div
+        className="feed-scroll"
+        ref={setScrollNode}
+        onScroll={(event) => saveFeedScroll(feed.id, event.currentTarget.scrollTop)}
+        onClickCapture={(event) => {
+          if ((event.target as Element).closest("[data-testid='title-card']")) {
+            saveFeedScroll(feed.id, event.currentTarget.scrollTop);
+          }
+        }}
+      >
+        {loading ? (
+          <FeedGridSkeleton label={loadingLabel} columns={feed.view.gridColumns ?? 3} />
+        ) : renderContent ? (
+          <FeedView feed={feed} scrollElementRef={scrollRef} />
+        ) : (
+          <FeedGridSkeleton label={feed.name} columns={feed.view.gridColumns ?? 3} />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -380,14 +491,6 @@ function FeedTabs({ onSelect }: { onSelect: (index: number) => void }) {
   );
 }
 
-function FeedSlidePlaceholder({ feed }: { feed?: Feed }) {
-  return (
-    <section className="feed-slide-placeholder" aria-hidden="true">
-      {feed && <span>{feed.name}</span>}
-    </section>
-  );
-}
-
 function FeedGridSkeleton({ label, columns }: { label: string; columns: FeedViewSettings["gridColumns"] }) {
   return (
     <section className="section feed-grid-skeleton" aria-busy="true">
@@ -409,7 +512,7 @@ function FeedGridSkeleton({ label, columns }: { label: string; columns: FeedView
   );
 }
 
-function FeedView({ feed }: { feed: Feed }) {
+function FeedView({ feed, scrollElementRef }: { feed: Feed; scrollElementRef?: RefObject<HTMLElement | null> }) {
   const store = useAppStore();
   const [editorOpen, setEditorOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -481,6 +584,7 @@ function FeedView({ feed }: { feed: Feed }) {
         feed={runtimeFeed}
         history={store.history}
         latestDate={store.syncMeta?.historyLastDate}
+        scrollElementRef={scrollElementRef}
       />
       <BottomDrawer title="Feed Settings" open={editorOpen} onOpenChange={setEditorOpen}>
         <FeedEditor
@@ -515,11 +619,13 @@ function TitleCollection({
   feed,
   history,
   latestDate,
+  scrollElementRef,
 }: {
   items: SeriesCatalog[];
   feed: Feed;
   history: HistoryMap;
   latestDate?: string | null;
+  scrollElementRef?: RefObject<HTMLElement | null>;
 }) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const columns = feed.view.gridColumns;
@@ -554,10 +660,13 @@ function TitleCollection({
     return Math.ceil(coverHeight + titleBlock + gridGap);
   }, [columns, gridGap, gridWidth]);
   const rowCount = Math.ceil(items.length / columns);
-  const rowVirtualizer = useWindowVirtualizer({
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is the intended grid virtualization layer.
+  const rowVirtualizer = useVirtualizer({
     count: rowCount,
+    getScrollElement: () =>
+      scrollElementRef?.current ?? (typeof document === "undefined" ? null : (document.scrollingElement as HTMLElement | null)),
     estimateSize: () => rowHeight,
-    overscan: 5,
+    overscan: columns >= 4 ? 8 : 6,
     scrollMargin,
   });
   const metricWindow = useMemo(() => resolveRollingWindow(feed.filters.rolling, latestDate), [feed.filters.rolling, latestDate]);

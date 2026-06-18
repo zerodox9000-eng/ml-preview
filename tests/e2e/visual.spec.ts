@@ -99,6 +99,13 @@ async function mockBackendData(page: Page) {
       headers: { "content-type": "application/gzip" },
     });
   });
+  await page.route("**/recommendations/features.json.gz", async (route) => {
+    await route.fulfill({
+      status: 200,
+      body: gzipJson([]),
+      headers: { "content-type": "application/gzip" },
+    });
+  });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -120,21 +127,16 @@ for (const viewport of [
     await expect(page.locator("body")).not.toContainText("Folders");
     await expect(page.locator(".compact-metrics").first()).toContainText("Year");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: `test-results/visual/${viewport.name}-home.png`, fullPage: true });
-
     await page.getByRole("link", { name: "Feeds" }).click();
     await expect(page.locator(".feed-cover-card").first()).toBeVisible();
     await expect(page.locator(".feed-cover-card .mosaic-cover").first()).toHaveCSS("aspect-ratio", "0.72 / 1");
-    await page.screenshot({ path: `test-results/visual/${viewport.name}-feeds.png`, fullPage: true });
 
     await page.getByRole("link", { name: "Search" }).click();
     await page.getByPlaceholder("Search titles").fill("Solo");
-    await page.screenshot({ path: `test-results/visual/${viewport.name}-search.png`, fullPage: true });
 
     await page.getByTestId("title-card").first().click();
     await expect(page.locator(".detail-stat-grid")).toContainText("30,298");
     await expect(page.locator(".detail-page")).not.toContainText("Folders");
-    await page.screenshot({ path: `test-results/visual/${viewport.name}-detail.png`, fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   });
 }

@@ -66,6 +66,23 @@ async function mockBackendData(page: Page) {
       source: { anilist: { id: 179451, rating: 69, url: "https://anilist.co/manga/179451" } },
     },
   ];
+  for (let index = 0; index < 36; index += 1) {
+    catalog.push({
+      ...catalog[1],
+      id: 3000 + index,
+      display_title: `Scroll Test ${index + 1}`,
+      stats: { popularity: 6000 + index, favourites: 200 + index, meanScore: 72 },
+      analytics: {
+        fanFavouriteRaw: 3.2,
+        fanRatioPercentile: 85,
+        popularityPercentile: 90,
+        fanFavouriteDiscoveryScore: 84 + index / 10,
+        fanFavouriteDiscoveryPercentile: 82 + index / 10,
+      },
+      links: { mangabaka: `https://mangabaka.org/${3000 + index}` },
+      source: {},
+    });
+  }
   await page.route("**/data/query-index.json.gz", async (route) => {
     await route.fulfill({
       status: 200,
@@ -187,4 +204,55 @@ test("mobile feeds, search, detail, recommendations, and navigation state work",
   await page.getByRole("link", { name: "Feeds" }).click();
   await expect(page.locator(".feed-cover-card").first()).toBeVisible();
   await expect(page.locator(".mosaic-cover").first()).toHaveCSS("aspect-ratio", "0.72 / 1");
+});
+
+test("home shell gestures, tabs, menu, and drawer stay usable", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Latest Listings" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "Latest Listings" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Feed menu" }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("dialog", { name: "Feed Settings" })).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+
+  const activeBefore = (await page.locator(".feed-tab.active").innerText()).trim();
+  await page.locator(".feed-scroll").first().evaluate((node) => {
+    node.scrollTo({ top: 600, left: 0, behavior: "auto" });
+  });
+  await page.waitForTimeout(120);
+  await expect(page.locator(".feed-tab.active")).toHaveText(activeBefore);
+
+  await page.locator(".feed-pager").evaluate((node) => {
+    node.scrollTo({ left: node.clientWidth, top: 0, behavior: "auto" });
+  });
+  await expect.poll(async () => (await page.locator(".feed-tab.active").innerText()).trim()).not.toBe(activeBefore);
+  await expect
+    .poll(async () => page.locator(".feed-scroll").nth(1).evaluate((node) => Math.round(node.scrollTop)))
+    .toBe(0);
+
+  const targetTab = page.locator(".feed-tab").nth(0);
+  const targetName = (await targetTab.innerText()).trim();
+  await targetTab.click();
+  await expect(page.locator(".feed-tab.active")).toHaveText(targetName);
+  const populatedTab = page.locator(".feed-tab").nth(1);
+  const populatedName = (await populatedTab.innerText()).trim();
+  await populatedTab.click();
+  await expect(page.locator(".feed-tab.active")).toHaveText(populatedName);
+
+  const activeScroll = page.locator('.feed-pane[aria-hidden="false"] .feed-scroll');
+  await activeScroll.evaluate((node) => {
+    node.scrollTo({ top: 700, left: 0, behavior: "auto" });
+  });
+  await page.waitForTimeout(80);
+  await page.locator('.feed-pane[aria-hidden="false"] [data-testid="title-card"]').last().click();
+  await expect(page.getByRole("heading", { name: /Solo Leveling|Latest Mock|High School|Scroll Test/ })).toBeVisible();
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect
+    .poll(async () => page.locator('.feed-pane[aria-hidden="false"] .feed-scroll').evaluate((node) => node.scrollTop > 0))
+    .toBe(true);
 });
